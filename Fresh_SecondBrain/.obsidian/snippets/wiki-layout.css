@@ -1,0 +1,76 @@
+/* ============================================
+   Wiki Layout — Enhanced layout and typography
+   for the Karpathy Second Brain
+   ============================================ */
+
+/* Wide page class for index and overview pages */
+.wide-page .markdown-preview-view,
+.wide-page .cm-sizer {
+  max-width: 900px;
+}
+
+/* Frontmatter property styling */
+.metadata-container {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin-bottom: 16px;
+  background: var(--background-secondary);
+}
+
+/* Better table styling */
+.markdown-preview-view table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.markdown-preview-view th {
+  background: var(--background-secondary);
+  font-weight: 600;
+  text-align: left;
+  padding: 8px 12px;
+}
+
+.markdown-preview-view td {
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+/* Dataview table styling */
+.dataview.table-view-table th {
+  font-weight: 600;
+  background: var(--background-secondary);
+}
+
+/* Tag styling within wiki pages */
+.tag {
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 0.85em;
+}
+
+/* Mermaid diagram container */
+.mermaid {
+  text-align: center;
+  margin: 16px 0;
+}
+
+/* Graph color legend reminder */
+.graph-view.color-fill-unresolved {
+  opacity: 0.5;
+}
+
+/* Smooth transitions */
+.workspace-leaf-content,
+.markdown-preview-view {
+  transition: opacity 0.15s ease;
+}
+
+/* Kanban board enhancements */
+.kanban-plugin__board {
+  gap: 8px;
+}
+
+.kanban-plugin__lane {
+  border-radius: 8px;
+}

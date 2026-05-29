@@ -1,0 +1,48 @@
+# archon-incident-response
+# Classify an incident, capture the response path, execute the likely runbook,
+# and draft the post-incident artifacts.
+
+name: incident-response
+description: |
+  Classify an incident, capture the response path, execute the likely runbook, and draft
+  the post-incident artifacts. Use when a real incident is declared or when a critical
+  alert requires coordinated operational response. This workflow sets severity, records
+  escalation intent, executes the selected runbook, and moves toward structured closure.
+  NOT for: standalone post-mortem drafting after the incident is already closed.
+version: 1.0.0
+
+environment: $ENVIRONMENT
+
+nodes:
+  - id: classify-incident
+    command: incident-classify
+    context: fresh
+
+  - id: page-oncall
+    bash: |
+      cat > "$ARTIFACTS_DIR/oncall-page.json" << EOF
+      {
+        "incident": "$ARGUMENTS",
+        "page_requested": true,
+        "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+      }
+      EOF
+    depends_on: [classify-incident]
+    context: fresh
+    when: "$classify-incident.output.page_oncall == 'true'"
+
+  - id: execute-runbook
+    command: runbook-executor
+    depends_on: [classify-incident, page-oncall]
+    context: fresh
+    trigger_rule: none_failed_min_one_success
+
+  - id: resolve-incident
+    command: incident-resolve
+    depends_on: [execute-runbook]
+    context: fresh
+
+  - id: draft-post-mortem
+    command: post-mortem-draft
+    depends_on: [resolve-incident]
+    context: fresh

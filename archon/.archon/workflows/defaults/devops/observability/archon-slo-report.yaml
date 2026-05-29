@@ -1,0 +1,48 @@
+# archon-slo-report
+# Build an SLO review report from available SLO sources and correlate it with recent incidents.
+
+name: slo-report
+description: |
+  Build an SLO review report from available SLO sources and correlate it with recent incidents.
+  Use when preparing reliability reviews, error-budget discussions, or executive summaries.
+  This workflow inventories SLO inputs, prepares a status report, and synthesizes the current
+  reliability posture into an executive-ready artifact.
+  NOT for: alert triage or dashboard deployment.
+version: 1.0.0
+
+environment: $ENVIRONMENT
+
+nodes:
+  - id: preflight
+    command: devops-preflight
+    context: fresh
+
+  - id: slo-status
+    command: slo-status-report
+    depends_on: [preflight]
+    context: fresh
+
+  - id: incident-correlation
+    prompt: |
+      Read:
+      - $ARTIFACTS_DIR/slo-status-report.md
+      - any recent incident artifacts in $ARTIFACTS_DIR if present
+
+      Write a correlation note to $ARTIFACTS_DIR/slo-incident-correlation.md describing
+      whether recent incidents align with the current SLO risk level.
+    depends_on: [slo-status]
+    context: fresh
+
+  - id: executive-report
+    prompt: |
+      Prepare an executive SLO report from:
+      - $ARTIFACTS_DIR/slo-status-report.md
+      - $ARTIFACTS_DIR/slo-incident-correlation.md
+
+      Write the output to $ARTIFACTS_DIR/slo-executive-report.md with:
+      - current reliability posture
+      - error-budget risk
+      - top reliability concerns
+      - next review action
+    depends_on: [incident-correlation]
+    context: fresh

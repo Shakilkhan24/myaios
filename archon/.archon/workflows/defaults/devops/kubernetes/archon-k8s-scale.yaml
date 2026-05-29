@@ -1,0 +1,87 @@
+# archon-k8s-scale
+# Scale a Kubernetes deployment or statefulset up or down with impact analysis.
+
+name: k8s-scale
+description: |
+  Scale a Kubernetes deployment or statefulset up or down with impact analysis and approval
+  for scale-to-zero operations. Use when adjusting replica counts for capacity or cost reasons.
+  Includes SLO gate check, impact classification, and pod readiness verification.
+  NOT for: deploying new versions, rollback, or namespace management.
+version: 1.0.0
+
+environment: $ENVIRONMENT
+
+nodes:
+  - id: preflight
+    command: devops-preflight
+    context: fresh
+
+  - id: current-scale-check
+    bash: |
+      DEPLOYMENT="$ARGUMENTS"
+      CURRENT_REPLICAS=$(kubectl get deployment "$DEPLOYMENT" -n "$K8S_NAMESPACE" -o jsonpath='{.spec.replicas}' 2>/dev/null || echo "0")
+      READY_REPLICAS=$(kubectl get deployment "$DEPLOYMENT" -n "$K8S_NAMESPACE" -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
+      echo "{\"deployment\":\"$DEPLOYMENT\",\"current_replicas\":$CURRENT_REPLICAS,\"ready_replicas\":$READY_REPLICAS}" \
+        > "$ARTIFACTS_DIR/current-scale.json"
+      echo "Current scale: $CURRENT_REPLICAS replicas ($READY_REPLICAS ready)"
+    depends_on: [preflight]
+    context: fresh
+
+  - id: slo-gate
+    bash: |
+      if [ -n "$OBSERVABILITY_URL" ]; then
+        BUDGET=$(curl -sf "$OBSERVABILITY_URL/api/slo/budget?service=$STACK" 2>/dev/null | jq '.remaining_percent' 2>/dev/null || echo "100")
+        echo "{\"budget_remaining\": $BUDGET}" > "$ARTIFACTS_DIR/slo-gate.json"
+        if [ "$(echo "$BUDGET < 5" | bc -l 2>/dev/null)" = "1" ]; then
+          echo "WARNING: SLO budget critically low ($BUDGET%)"
+        fi
+      else
+        echo '{"budget_remaining": 100, "note": "no observability URL configured"}' > "$ARTIFACTS_DIR/slo-gate.json"
+      fi
+    depends_on: [current-scale-check]
+    context: fresh
+
+  - id: impact-classify
+    command: change-impact-classify
+    depends_on: [slo-gate]
+    context: fresh
+
+  - id: approval
+    approval:
+      message: |
+        ## Scale-to-Zero Approval Required
+
+        **Environment:** $ENVIRONMENT
+        **Deployment:** $ARGUMENTS
+        **Action:** Scaling to zero replicas
+
+        ⚠️ This will stop all pods for this deployment.
+
+        **Approve only if intentional (maintenance, cost savings).**
+    depends_on: [impact-classify]
+    when: "$SCALE_TARGET == '0'"
+
+  - id: kubectl-scale
+    bash: |
+      DEPLOYMENT="$ARGUMENTS"
+      SCALE_TO="${SCALE_TARGET:-2}"
+      kubectl scale deployment "$DEPLOYMENT" -n "$K8S_NAMESPACE" --replicas="$SCALE_TO" \
+        2>&1 | tee "$ARTIFACTS_DIR/scale.log"
+      echo "{\"deployment\":\"$DEPLOYMENT\",\"scaled_to\":$SCALE_TO,\"timestamp\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" \
+        > "$ARTIFACTS_DIR/scale-result.json"
+    depends_on: [approval, impact-classify]
+    context: fresh
+    trigger_rule: none_failed_min_one_success
+
+  - id: verify-pods-ready
+    bash: |
+      DEPLOYMENT="$ARGUMENTS"
+      kubectl rollout status deployment "$DEPLOYMENT" -n "$K8S_NAMESPACE" --timeout=120s \
+        2>&1 | tee "$ARTIFACTS_DIR/scale-verify.log"
+    depends_on: [kubectl-scale]
+    context: fresh
+
+  - id: notify
+    command: notify-deploy-complete
+    depends_on: [verify-pods-ready]
+    context: fresh

@@ -1,0 +1,11 @@
+audit:
+    it is to check the entire ai os system is correctly implemented or not. 
+    There wouldn't be any flaws/mismatched components. 
+
+    For this, first have a ai os system docs, where from architecture to goals to serve, everything would be written up.
+    Such that when i would call audit, the agent/llm would watch the entire ai os folders and structures to judge is it perfect or there is some mismatches that is hamparing the system.#
+
+    You can have a AUDIT.md for that.
+    AUDIT.md:
+        it would be organized to wire everything up perfectly and getting modified if anything comes up. 
+        Just a complete snapshot of the system.  

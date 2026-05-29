@@ -1,0 +1,67 @@
+# archon-compliance-check
+# Run compliance benchmark scans, map results into a gap analysis,
+# and produce a structured remediation summary.
+
+name: compliance-check
+description: |
+  Run automated compliance checks against CIS Benchmarks, SOC2, and PCI-DSS controls,
+  then generate a gap analysis and remediation summary. Use when performing compliance
+  reviews, audit preparation, or periodic control validation. This workflow aggregates
+  multiple compliance scanners and turns them into an actionable report.
+  NOT for: vulnerability-only reviews or release announcements.
+version: 1.0.0
+
+environment: $ENVIRONMENT
+
+nodes:
+  - id: preflight
+    command: devops-preflight
+    context: fresh
+
+  - id: cis-scan
+    command: cis-benchmark-scan
+    depends_on: [preflight]
+    context: fresh
+
+  - id: soc2-scan
+    command: soc2-control-check
+    depends_on: [preflight]
+    context: fresh
+
+  - id: pci-scan
+    command: pci-dss-scan
+    depends_on: [preflight]
+    context: fresh
+
+  - id: gap-analysis
+    command: compliance-gap-analysis
+    depends_on: [cis-scan, soc2-scan, pci-scan]
+    context: fresh
+
+  - id: generate-report
+    prompt: |
+      Read $ARTIFACTS_DIR/compliance-gap-analysis.json and prepare the compliance outputs.
+
+      Write:
+      - $ARTIFACTS_DIR/compliance-remediation-plan.md
+      - $ARTIFACTS_DIR/compliance-report.md
+
+      In $ARTIFACTS_DIR/compliance-remediation-plan.md, classify the findings into:
+      - immediately automatable
+      - partially automatable
+      - manual evidence or policy work
+
+      Include a short rationale per category and the most important next step for each.
+
+      In $ARTIFACTS_DIR/compliance-report.md, include:
+      - pass/fail themes
+      - control families affected
+      - recommended remediation sequencing
+      - how the remediation plan should be used by reviewers
+    depends_on: [gap-analysis]
+    context: fresh
+
+  - id: notify
+    command: notify-security-findings
+    depends_on: [generate-report]
+    context: fresh

@@ -1,0 +1,151 @@
+# archon-env-bootstrap
+# Bootstrap a completely new environment (dev/staging/production) from scratch
+# using Terraform + Kubernetes + Helm.
+
+name: env-bootstrap
+description: |
+  Bootstrap a completely new environment (dev/staging/production) from scratch using
+  Terraform for infrastructure, Kubernetes cluster setup, and Helm for application layer.
+  Use when creating a new deployment environment. This is a multi-phase, long-running
+  workflow with explicit infrastructure, cluster, and platform bootstrap boundaries.
+  NOT for: updating existing environments, deploying single services, or teardown operations.
+version: 1.0.0
+
+environment: $ENVIRONMENT
+
+nodes:
+  - id: preflight
+    command: devops-preflight
+    context: fresh
+
+  - id: terraform-plan
+    command: terraform-plan
+    depends_on: [preflight]
+    context: fresh
+
+  - id: infracost-estimate
+    command: infracost-estimate
+    depends_on: [terraform-plan]
+    context: fresh
+
+  - id: approval
+    approval:
+      message: |
+        ## Environment Bootstrap Approval
+
+        **Environment:** $ENVIRONMENT
+        **Action:** Create entire environment from scratch
+
+        ### Terraform Plan
+        See $ARTIFACTS_DIR/tfplan.txt
+
+        ### Cost Estimate
+        See $ARTIFACTS_DIR/cost-estimate.json
+
+        **This is a significant operation. Review the infrastructure and cost artifacts carefully.**
+      capture_response: true
+    depends_on: [infracost-estimate]
+
+  - id: terraform-foundation
+    command: terraform-apply
+    depends_on: [approval]
+    context: fresh
+
+  - id: terraform-verify-foundation
+    command: terraform-verify
+    depends_on: [terraform-foundation]
+    context: fresh
+
+  - id: cluster-connectivity-verify
+    bash: |
+      set -euo pipefail
+      kubectl cluster-info > "$ARTIFACTS_DIR/cluster-connectivity.txt"
+      kubectl get nodes -o json > "$ARTIFACTS_DIR/cluster-nodes.json"
+      READY_NODES=$(kubectl get nodes --no-headers 2>/dev/null | grep -c ' Ready' || true)
+      STATUS="healthy"
+      if [ "$READY_NODES" -eq 0 ]; then
+        STATUS="degraded"
+      fi
+      printf '{"status":"%s","ready_nodes":%s}\n' "$STATUS" "$READY_NODES" \
+        > "$ARTIFACTS_DIR/cluster-connectivity.json"
+      if [ "$STATUS" != "healthy" ]; then
+        echo "Cluster connectivity verification failed"
+        exit 1
+      fi
+    depends_on: [terraform-verify-foundation]
+    context: fresh
+
+  - id: bootstrap-namespaces
+    bash: |
+      set -euo pipefail
+      for ns in "$ENVIRONMENT" monitoring ingress-system cert-manager external-dns external-secrets; do
+        kubectl get namespace "$ns" >/dev/null 2>&1 || kubectl create namespace "$ns"
+      done
+      kubectl get namespace "$ENVIRONMENT" -o json > "$ARTIFACTS_DIR/namespace-create.json"
+    depends_on: [cluster-connectivity-verify]
+    context: fresh
+
+  - id: install-base-services
+    bash: |
+      set -euo pipefail
+      helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+      helm repo add jetstack https://charts.jetstack.io
+      helm repo add bitnami https://charts.bitnami.com/bitnami
+      helm repo add metrics-server https://kubernetes-sigs.github.io/metrics-server/
+      helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+      helm repo add grafana https://grafana.github.io/helm-charts
+      helm repo add external-secrets https://charts.external-secrets.io
+      helm repo update
+
+      helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
+        --namespace ingress-system --create-namespace
+      helm upgrade --install cert-manager jetstack/cert-manager \
+        --namespace cert-manager --create-namespace --set crds.enabled=true
+      helm upgrade --install external-dns bitnami/external-dns \
+        --namespace external-dns --create-namespace
+      helm upgrade --install metrics-server metrics-server/metrics-server \
+        --namespace kube-system
+
+      helm list -A -o json > "$ARTIFACTS_DIR/helm-bootstrap.json"
+    depends_on: [bootstrap-namespaces]
+    context: fresh
+
+  - id: install-operators
+    bash: |
+      set -euo pipefail
+      helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
+        --namespace monitoring --create-namespace
+      helm upgrade --install loki grafana/loki \
+        --namespace monitoring
+      helm upgrade --install external-secrets external-secrets/external-secrets \
+        --namespace external-secrets --create-namespace
+
+      helm list -A -o json > "$ARTIFACTS_DIR/operators-bootstrap.json"
+    depends_on: [install-base-services]
+    context: fresh
+
+  - id: smoke-test
+    bash: |
+      set -euo pipefail
+      echo "Running environment smoke tests..."
+      kubectl get nodes -o wide > "$ARTIFACTS_DIR/smoke-nodes.txt"
+      kubectl get pods -A > "$ARTIFACTS_DIR/smoke-pods.txt"
+      kubectl get svc -A > "$ARTIFACTS_DIR/smoke-services.txt"
+      READY_NODES=$(kubectl get nodes --no-headers | grep -c ' Ready' || true)
+      STATUS="healthy"
+      if [ "$READY_NODES" -eq 0 ]; then
+        STATUS="degraded"
+      fi
+      printf '{"status":"%s","ready_nodes":%s}\n' "$STATUS" "$READY_NODES" \
+        > "$ARTIFACTS_DIR/smoke-test.json"
+      if [ "$STATUS" != "healthy" ]; then
+        echo "Environment smoke test failed"
+        exit 1
+      fi
+    depends_on: [install-operators]
+    context: fresh
+
+  - id: notify
+    command: notify-deploy-complete
+    depends_on: [smoke-test]
+    context: fresh

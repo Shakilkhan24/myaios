@@ -1,0 +1,30 @@
+version: 1
+
+metadata:
+  owner_team: platform
+  review_cycle: quarterly
+  default_status: active
+  notes: >
+    Compliance exemptions must be time-bound, owned, and linked to a tracked
+    remediation plan. Keep this file under version control and review it like code.
+
+policy:
+  require_ticket: true
+  require_owner: true
+  require_expires_at: true
+  allow_expired_exemptions: false
+
+exemptions: []
+
+# Example entry:
+# - id: EX-2026-001
+#   control_id: CIS 5.1.1
+#   framework: cis-level1
+#   status: active
+#   owner: platform
+#   ticket: SEC-1234
+#   justification: Temporary exception during phased migration to managed identity.
+#   remediation_plan: Remove local access keys and re-run IAM audit workflow.
+#   approved_by: security-lead
+#   created_at: 2026-04-19
+#   expires_at: 2026-07-19

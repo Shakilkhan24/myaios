@@ -1,0 +1,108 @@
+# archon-release-train
+# Execute a release train from version calculation through changelog generation,
+# staged deployment, production approval, and release announcement.
+
+name: release-train
+description: |
+  Execute a release train from version calculation through changelog generation,
+  build and security scan, staged deployment, production approval, and release
+  announcement. Use when cutting an official release candidate or shipping a
+  planned production release. This workflow coordinates the high-level release
+  sequence while preserving explicit approval before promotion.
+  NOT for: ad-hoc hotfix rollbacks or pipeline linting only.
+version: 1.0.0
+
+environment: $ENVIRONMENT
+
+nodes:
+  - id: preflight
+    command: devops-preflight
+    context: fresh
+
+  - id: determine-version
+    command: semver-bump
+    depends_on: [preflight]
+    context: fresh
+
+  - id: generate-changelog
+    command: changelog-generate
+    depends_on: [determine-version]
+    context: fresh
+
+  - id: build-image
+    command: docker-build
+    depends_on: [generate-changelog]
+    context: fresh
+
+  - id: security-scan
+    command: trivy-container-scan
+    depends_on: [build-image]
+    context: fresh
+
+  - id: deploy-staging
+    command: helm-upgrade
+    depends_on: [security-scan]
+    context: fresh
+
+  - id: staging-health-check
+    loop:
+      prompt: |
+        Verify the staged release is healthy after deployment.
+
+        If the staging rollout is healthy, emit <promise>HEALTHY</promise>.
+        If the staged release is degraded or failing smoke tests, emit
+        <promise>DEGRADED</promise>. If the rollout is still progressing,
+        emit nothing and the loop will retry.
+      until: HEALTHY|DEGRADED
+      max_iterations: 12
+      fresh_context: true
+    depends_on: [deploy-staging]
+
+  - id: release-approval
+    approval:
+      message: |
+        ## Release Train Approval Required
+
+        **Target version:** $ARTIFACTS_DIR/semver-bump.json
+        **Changelog:** $ARTIFACTS_DIR/changelog.md
+        **Container scan:** $ARTIFACTS_DIR/trivy-scan.json
+        **Staging status:** $staging-health-check.output
+
+        Approve promotion only if staging verification is healthy and the
+        release notes are correct.
+      capture_response: true
+    depends_on: [staging-health-check]
+    when: "$staging-health-check.output == 'HEALTHY'"
+
+  - id: tag-and-push
+    bash: |
+      NEXT_VERSION=$(jq -r '.next_version' "$ARTIFACTS_DIR/semver-bump.json")
+      git tag "$NEXT_VERSION"
+      git push origin "$NEXT_VERSION"
+      echo "{\"version\":\"$NEXT_VERSION\"}" > "$ARTIFACTS_DIR/release-tag.json"
+    depends_on: [release-approval]
+    context: fresh
+
+  - id: deploy-production
+    command: helm-upgrade
+    depends_on: [tag-and-push]
+    context: fresh
+
+  - id: production-health-check
+    loop:
+      prompt: |
+        Verify the production release after deployment.
+
+        If the release is healthy, emit <promise>HEALTHY</promise>.
+        If the release is degraded, emit <promise>DEGRADED</promise>.
+        If more observation is needed, emit nothing and retry.
+      until: HEALTHY|DEGRADED
+      max_iterations: 20
+      fresh_context: true
+    depends_on: [deploy-production]
+
+  - id: announce-release
+    command: release-announce
+    depends_on: [production-health-check]
+    context: fresh
+    when: "$production-health-check.output == 'HEALTHY'"

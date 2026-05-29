@@ -1,0 +1,61 @@
+# archon-dashboard-deploy
+# Validate and deploy a Grafana dashboard definition with optional approval
+# before the API write and a post-deploy verification note.
+
+name: dashboard-deploy
+description: |
+  Validate and deploy a Grafana dashboard definition with optional approval before the API
+  write and a post-deploy verification note afterward. Use when publishing or updating a
+  Grafana dashboard from version-controlled JSON. This workflow checks the dashboard file,
+  requests approval when needed, performs the deployment, and records the verification step.
+  NOT for: alert triage or SLO reporting.
+version: 1.0.0
+
+environment: $ENVIRONMENT
+
+nodes:
+  - id: preflight
+    command: devops-preflight
+    context: fresh
+
+  - id: validate-dashboard-json
+    bash: |
+      if [ -z "$ARGUMENTS" ] || [ ! -f "$ARGUMENTS" ]; then
+        echo "ERROR: dashboard JSON path must be provided in ARGUMENTS"
+        exit 1
+      fi
+      jq . "$ARGUMENTS" > "$ARTIFACTS_DIR/dashboard-validated.json"
+    depends_on: [preflight]
+    context: fresh
+
+  - id: approval
+    approval:
+      message: |
+        ## Dashboard Deploy Approval Required
+
+        **Environment:** $ENVIRONMENT
+        **Dashboard file:** $ARGUMENTS
+
+        Review the validated dashboard payload in:
+        $ARTIFACTS_DIR/dashboard-validated.json
+
+        Approve before publishing the dashboard to Grafana.
+      capture_response: true
+    depends_on: [validate-dashboard-json]
+    when: "$ENVIRONMENT == 'production'"
+
+  - id: deploy-dashboard
+    command: grafana-dashboard-deploy
+    depends_on: [approval, validate-dashboard-json]
+    context: fresh
+    trigger_rule: none_failed_min_one_success
+
+  - id: verify-dashboard-loads
+    prompt: |
+      Read $ARTIFACTS_DIR/grafana-dashboard-deploy.json and write a verification note to
+      $ARTIFACTS_DIR/dashboard-verification.md summarizing:
+      - deployment status
+      - dashboard UID
+      - any follow-up checks the operator should perform in Grafana
+    depends_on: [deploy-dashboard]
+    context: fresh

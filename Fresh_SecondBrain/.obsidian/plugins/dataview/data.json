@@ -1,0 +1,11 @@
+{
+  "refreshEnabled": true,
+  "renderNullAs": "—",
+  "warnOnEmpty": true,
+  "enableDataviewJs": true,
+  "enableInlineDataviewJs": true,
+  "schemaVersion": 1,
+  "tableIdColumnName": "File",
+  "tableGroupColumnName": "Group",
+  "recursiveSubTaskCompletion": false
+}

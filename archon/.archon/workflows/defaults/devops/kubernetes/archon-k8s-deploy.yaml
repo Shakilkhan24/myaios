@@ -1,0 +1,130 @@
+# archon-k8s-deploy
+# Build, scan, push, and deploy a container image to Kubernetes via Helm
+# with health verification and automatic rollback on failure.
+
+name: k8s-deploy
+description: |
+  Build, scan, push, and deploy a container image to Kubernetes via Helm with health
+  verification and automatic rollback on failure. Use when deploying an application to
+  Kubernetes. Includes container image scanning, optional image signing, Helm diff preview,
+  impact classification, approval for production, and post-deploy health polling.
+  NOT for: infrastructure changes, database migrations, rollback-only operations.
+version: 1.0.0
+
+environment: $ENVIRONMENT
+
+nodes:
+  - id: preflight
+    command: devops-preflight
+    context: fresh
+
+  - id: docker-build
+    command: docker-build
+    depends_on: [preflight]
+    context: fresh
+
+  - id: image-scan
+    command: trivy-container-scan
+    depends_on: [docker-build]
+    context: fresh
+
+  - id: image-push
+    bash: |
+      # Required permissions: ecr:PutImage or equivalent registry push
+      set +x
+      docker push "$IMAGE_REPO:$IMAGE_TAG" 2>&1 | tee "$ARTIFACTS_DIR/image-push.log"
+      set -x
+      # Use image digest for production (Rule S7)
+      if [ "$ENVIRONMENT" = "production" ]; then
+        IMAGE_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "$IMAGE_REPO:$IMAGE_TAG" 2>/dev/null)
+        echo "Production deploy will use digest: $IMAGE_DIGEST"
+        echo "$IMAGE_DIGEST" > "$ARTIFACTS_DIR/image-digest.txt"
+      fi
+    depends_on: [image-scan]
+    context: fresh
+
+  - id: security-gate
+    bash: |
+      BLOCK_COUNT=$(jq '[.findings[] | select(.severity >= "'$SECURITY_BLOCK_SEVERITY'")] | length' \
+        "$ARTIFACTS_DIR/trivy-scan.json" 2>/dev/null || echo "0")
+      echo "{\"block_count\": $BLOCK_COUNT}" > "$ARTIFACTS_DIR/security-gate.json"
+      if [ "$BLOCK_COUNT" -gt "0" ]; then
+        echo "SECURITY GATE FAILED: $BLOCK_COUNT findings at or above $SECURITY_BLOCK_SEVERITY"
+        exit 1
+      fi
+    depends_on: [image-push]
+    context: fresh
+
+  - id: helm-diff
+    command: helm-plan
+    depends_on: [security-gate]
+    context: fresh
+
+  - id: impact-classify
+    command: change-impact-classify
+    depends_on: [helm-diff]
+    context: fresh
+
+  - id: approval
+    approval:
+      message: |
+        ## Kubernetes Deploy Approval Required
+
+        **Environment:** $ENVIRONMENT
+        **Image:** $IMAGE_REPO:$IMAGE_TAG
+        **Release:** $HELM_RELEASE
+        **Namespace:** $HELM_NAMESPACE
+
+        ### Security Scan
+        See $ARTIFACTS_DIR/trivy-scan.json
+
+        ### Helm Diff
+        See $ARTIFACTS_DIR/helm-diff.txt
+
+        ### Blast Radius
+        $impact-classify.output.blast_radius
+
+        **Review artifacts, then approve or reject.**
+      capture_response: true
+    depends_on: [impact-classify]
+    when: "$impact-classify.output.requires_approval == 'true'"
+
+  - id: helm-upgrade
+    command: helm-upgrade
+    depends_on: [approval, impact-classify]
+    context: fresh
+    trigger_rule: none_failed_min_one_success
+
+  - id: health-check-loop
+    loop:
+      prompt: |
+        Check the health of $HELM_RELEASE in $HELM_NAMESPACE on $K8S_CONTEXT.
+        Run:
+          kubectl get pods -n $HELM_NAMESPACE -l app.kubernetes.io/instance=$HELM_RELEASE
+          kubectl rollout status deployment/$HELM_RELEASE -n $HELM_NAMESPACE
+
+        If ALL pods Running and rollout complete:
+          Write $ARTIFACTS_DIR/health-check.json with status: healthy
+          Emit: <promise>HEALTHY</promise>
+
+        If any pods CrashLoopBackOff or health fails:
+          Write $ARTIFACTS_DIR/health-check.json with status: degraded
+          Emit: <promise>DEGRADED</promise>
+
+        If transitioning: do NOT emit any signal, loop will retry.
+      until: HEALTHY|DEGRADED
+      max_iterations: 20
+      fresh_context: true
+    depends_on: [helm-upgrade]
+
+  - id: rollback-if-degraded
+    command: helm-rollback
+    depends_on: [health-check-loop]
+    context: fresh
+    when: "$health-check-loop.output == 'DEGRADED'"
+
+  - id: notify
+    command: notify-deploy-complete
+    depends_on: [health-check-loop, rollback-if-degraded]
+    context: fresh
+    trigger_rule: all_done

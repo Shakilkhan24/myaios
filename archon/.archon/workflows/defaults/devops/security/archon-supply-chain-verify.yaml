@@ -1,0 +1,59 @@
+# archon-supply-chain-verify
+# Verify software supply chain artifacts by generating an SBOM, checking signatures,
+# cross-checking vulnerabilities, and producing an attestation summary.
+
+name: supply-chain-verify
+description: |
+  Verify software supply chain integrity by generating an SBOM, checking image signature
+  state, cross-checking vulnerabilities, and writing an attestation-style report. Use when
+  preparing a release or validating an artifact before promotion. This workflow focuses on
+  provenance and package integrity signals rather than runtime deployment health.
+  NOT for: application rollouts or compliance control checks.
+version: 1.0.0
+
+environment: $ENVIRONMENT
+
+nodes:
+  - id: preflight
+    command: devops-preflight
+    context: fresh
+
+  - id: generate-sbom
+    command: sbom-generate
+    depends_on: [preflight]
+    context: fresh
+
+  - id: verify-signatures
+    bash: |
+      if [ "$SIGN_IMAGES" = "true" ] && [ -n "$IMAGE_REPO" ] && [ -n "$IMAGE_TAG" ]; then
+        cosign verify "$IMAGE_REPO:$IMAGE_TAG" > "$ARTIFACTS_DIR/cosign-verify.json" 2>&1 || exit 1
+      else
+        echo "{\"status\":\"skipped\",\"reason\":\"image signing not required\"}" > "$ARTIFACTS_DIR/cosign-verify.json"
+      fi
+    depends_on: [generate-sbom]
+    context: fresh
+
+  - id: vulnerability-cross-check
+    command: trivy-container-scan
+    depends_on: [generate-sbom]
+    context: fresh
+
+  - id: generate-attestation-report
+    prompt: |
+      Review:
+      - $ARTIFACTS_DIR/sbom.json
+      - $ARTIFACTS_DIR/cosign-verify.json
+      - $ARTIFACTS_DIR/trivy-scan.json
+
+      Write a release attestation summary to $ARTIFACTS_DIR/supply-chain-report.md that covers:
+      - package inventory completeness
+      - signature verification status
+      - vulnerability status
+      - whether the artifact is ready for promotion
+    depends_on: [verify-signatures, vulnerability-cross-check]
+    context: fresh
+
+  - id: notify
+    command: notify-security-findings
+    depends_on: [generate-attestation-report]
+    context: fresh

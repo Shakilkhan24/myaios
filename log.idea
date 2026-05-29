@@ -1,0 +1,11 @@
+ai os log:
+    schema:
+        have a rich schema having metadatas 
+        have timestamps of actions done
+        short summary what is done in this stage, then indexing with the ai os main database to have sense how things processed 
+        even errors be captured 
+    It would be used as a visuals of performance measuring of the ai os system 
+    Have a skill to manage the log schema, log insertion and more. 
+    
+
+

@@ -1,0 +1,37 @@
+skill:
+    Build absolute skill following the absolute skill builder strategy.
+        skill.md 
+        scripts
+        references
+        and others.
+    Read some of the skills to have better understanding, from archon/.claude/skills     
+    But for each skill not every components are necessary, so you need to show your wisdom to design skill. Because bigger skill for smaller tasks is nothing but burning too much tokens and context window, also can create hallucinations, undeterministic generations, too much overhead, vulnerability and more.
+    You can do little research on skill development optimal strategy.      
+
+
+    Very organized on its goal, reasoning and actions but having balanced/traded off size/length/reasoning depths/actions pipeline and more.
+    Be concise on each skill's output and goal, you can have little metrics awareness in the skills such that it gets closer to reach the goal/output.
+
+    types for the aiop: 
+        ai os, management skills
+        skill builder, updater skill
+        skill for each mcp handling (test connectivity first, process mcps sources, triggers for searching if anything new came in the mcps)
+        skill for context handling 
+        skill for log management 
+        skill for documentation 
+        skill for visualization over mathematical views or databases or metrics or any visualizable insights (python (matplotlib, seaborn, plotly) or others languages as well)
+        skill for dashboarding (if any events happend in the aios)
+        skill for drawing diagrams like excalidraw 
+        skill for cronjob handling 
+        skill for handling CLAUDE.md 
+        skill for system prompt 
+        skill for database management for the entire aiops. 
+
+        
+        skill for pattern learning to improve any existing skill/context/system prompt/command etc: 
+            1. have pseudo perspectives and based on that modify existing tool 
+                . teach me the agent the pattern finding 
+                then agent would discover perspectives by own and modify the existing tool like existing skill/context/command etc 
+            2. but must have some tradeoffs for the perspectives such that the existing tool improvement way are in control and concise. 
+                since the tool are very core, any wrong modification or exxazerated modification can create overhead or resources heavy.
+                I need to keep it best and whats necessary.      

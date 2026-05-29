@@ -1,0 +1,48 @@
+# archon-cost-report
+# Generate a structured cost report, identify waste, and summarize right-sizing
+# opportunities for review.
+
+name: cost-report
+description: |
+  Generate a structured cost report, identify waste, and summarize right-sizing
+  opportunities for review. Use when running a FinOps review, investigating cloud spend,
+  or preparing budget discussions. This workflow builds the current cost picture and then
+  layers waste and sizing analysis on top of it for actionable follow-up.
+  NOT for: directly applying infrastructure changes.
+version: 1.0.0
+
+environment: $ENVIRONMENT
+
+nodes:
+  - id: preflight
+    command: devops-preflight
+    context: fresh
+
+  - id: generate-cost-report
+    command: cost-report-generate
+    depends_on: [preflight]
+    context: fresh
+
+  - id: identify-waste
+    command: waste-identify
+    depends_on: [generate-cost-report]
+    context: fresh
+
+  - id: analyze-right-sizing
+    command: right-sizing-analyze
+    depends_on: [identify-waste]
+    context: fresh
+
+  - id: summarize-finops
+    prompt: |
+      Read:
+      - $ARTIFACTS_DIR/cost-report.md
+      - $ARTIFACTS_DIR/waste-candidates.md
+      - $ARTIFACTS_DIR/right-sizing-report.md
+
+      Write a consolidated FinOps summary to $ARTIFACTS_DIR/finops-summary.md with:
+      - current spend posture
+      - highest-confidence savings opportunities
+      - items requiring more validation
+    depends_on: [analyze-right-sizing]
+    context: fresh

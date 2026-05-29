@@ -1,0 +1,19 @@
+CLAUDE.md:
+    I have 2 CLAUDE.mds, one for the AI OS itself and another for my second brain 
+
+    Since it is the brain of the systems, keep it concise and kind of deterministic, also smart/versatile and super in providing instructions
+    It would wire up the entire ai os system. Integrated with every components old/new. Because all navigations to different components/folders get started with this file.
+    It chains everything up and manage the entire thing like a narve system, that's why it is called the brain. 
+
+    It would be quite deterministic about its goal/objectives and how to achieve them.
+
+    evolution:
+        After some iterations and judgement based on the generations, with consultancy with admin, the CLAUDE.md can be modified to be more aligned with the project goal. 
+        If any new features to get added, then the new thing must be connected like neuron wiring with the CLAUDE.md 
+    test:
+        since lots of components would be wired up like mcps, skills, commands, hooks, logs, cronjobs, system prompts, documentations, databases, templates and more
+        there is a need for testing every components such that every edge cases (hidden test cases) get resolved also, 
+        it would make sure the CLAUDE.md is 100% working with the components. 
+        
+        For the first time building the CLAUDE.md, you would do the entire testing.
+        After the first version, you would just test the new things getting added. 

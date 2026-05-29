@@ -1,0 +1,47 @@
+/* ============================================
+   Wiki Callouts — Custom callout types for the
+   Karpathy Second Brain knowledge wiki
+   ============================================ */
+
+/* CONFLICT — Contradictions between sources */
+.callout[data-callout="conflict"] {
+  --callout-color: 243, 139, 168;
+  --callout-icon: lucide-swords;
+}
+.callout[data-callout="conflict"] .callout-title {
+  font-weight: 700;
+}
+.callout[data-callout="conflict"] .callout-content {
+  border-left: 3px solid rgba(243, 139, 168, 0.5);
+  padding-left: 12px;
+}
+
+/* GAP — Thin evidence / knowledge gaps */
+.callout[data-callout="gap"] {
+  --callout-color: 249, 226, 175;
+  --callout-icon: lucide-alert-triangle;
+}
+
+/* EVOLVING — Claims that have shifted over time */
+.callout[data-callout="evolving"] {
+  --callout-color: 137, 180, 250;
+  --callout-icon: lucide-git-branch;
+}
+
+/* STRONG — High-confidence, well-sourced claims */
+.callout[data-callout="strong"] {
+  --callout-color: 166, 227, 161;
+  --callout-icon: lucide-shield-check;
+}
+
+/* SPECULATIVE — Synthesis/inference, not directly sourced */
+.callout[data-callout="speculative"] {
+  --callout-color: 203, 166, 247;
+  --callout-icon: lucide-sparkles;
+}
+
+/* QUESTION — Open questions worth investigating */
+.callout[data-callout="question"] {
+  --callout-color: 116, 199, 236;
+  --callout-icon: lucide-help-circle;
+}

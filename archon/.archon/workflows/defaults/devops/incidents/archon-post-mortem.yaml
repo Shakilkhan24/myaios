@@ -1,0 +1,41 @@
+# archon-post-mortem
+# Reconstruct an incident timeline and draft a blameless post-mortem with follow-up actions.
+
+name: post-mortem
+description: |
+  Reconstruct an incident timeline and draft a blameless post-mortem with follow-up actions.
+  Use when an incident has been mitigated and the team needs a structured retrospective.
+  This workflow gathers timeline evidence, drafts the post-mortem, and records the actions
+  that still need tracking.
+  NOT for: real-time mitigation while the incident is still active.
+version: 1.0.0
+
+environment: $ENVIRONMENT
+
+nodes:
+  - id: preflight
+    command: devops-preflight
+    context: fresh
+
+  - id: reconstruct-timeline
+    command: incident-timeline
+    depends_on: [preflight]
+    context: fresh
+
+  - id: draft-post-mortem
+    command: post-mortem-draft
+    depends_on: [reconstruct-timeline]
+    context: fresh
+
+  - id: create-tracking-summary
+    prompt: |
+      Read:
+      - $ARTIFACTS_DIR/post-mortem.md
+      - $ARTIFACTS_DIR/post-mortem.json
+
+      Write a follow-up summary to $ARTIFACTS_DIR/post-mortem-follow-up.md with:
+      - the top action items
+      - which items are operational vs code changes
+      - what should be scheduled next
+    depends_on: [draft-post-mortem]
+    context: fresh

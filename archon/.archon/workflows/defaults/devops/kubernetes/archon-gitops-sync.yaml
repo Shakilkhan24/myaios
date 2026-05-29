@@ -1,0 +1,77 @@
+# archon-gitops-sync
+# Detect GitOps drift in ArgoCD or Flux and force synchronize to the desired state in git.
+
+name: gitops-sync
+description: |
+  Detect GitOps drift in ArgoCD or Flux and force synchronize to the desired state in git.
+  Use when ArgoCD/Flux app is out of sync and you need a controlled resync. Includes drift
+  detection, diff report, approval for destructive drift, sync execution, and health check.
+  NOT for: deploying new versions (use k8s-deploy), initial setup, or manifest authoring.
+version: 1.0.0
+
+environment: $ENVIRONMENT
+
+nodes:
+  - id: preflight
+    command: devops-preflight
+    context: fresh
+
+  - id: detect-drift
+    bash: |
+      APP_NAME="${ARGUMENTS:-$HELM_RELEASE}"
+      if which argocd > /dev/null 2>&1; then
+        argocd app get "$APP_NAME" -o json > "$ARTIFACTS_DIR/gitops-state.json" 2>&1
+        SYNC_STATUS=$(jq -r '.status.sync.status' "$ARTIFACTS_DIR/gitops-state.json")
+        HEALTH_STATUS=$(jq -r '.status.health.status' "$ARTIFACTS_DIR/gitops-state.json")
+        echo "{\"app\":\"$APP_NAME\",\"sync\":\"$SYNC_STATUS\",\"health\":\"$HEALTH_STATUS\"}" \
+          > "$ARTIFACTS_DIR/drift-detection.json"
+      elif which flux > /dev/null 2>&1; then
+        flux get kustomizations -o json > "$ARTIFACTS_DIR/gitops-state.json" 2>&1
+      fi
+    depends_on: [preflight]
+    context: fresh
+
+  - id: classify-drift
+    command: change-impact-classify
+    depends_on: [detect-drift]
+    context: fresh
+
+  - id: diff-report
+    bash: |
+      APP_NAME="${ARGUMENTS:-$HELM_RELEASE}"
+      if which argocd > /dev/null 2>&1; then
+        argocd app diff "$APP_NAME" 2>&1 | tee "$ARTIFACTS_DIR/gitops-diff.txt" || true
+      fi
+    depends_on: [classify-drift]
+    context: fresh
+
+  - id: approval
+    approval:
+      message: |
+        ## GitOps Sync Approval
+
+        **App:** $ARGUMENTS
+        **Environment:** $ENVIRONMENT
+
+        ### Drift Detected
+        See $ARTIFACTS_DIR/gitops-diff.txt
+
+        **Approve to force sync to git desired state.**
+    depends_on: [diff-report]
+    when: "$classify-drift.output.blast_radius == 'high' || $classify-drift.output.blast_radius == 'critical'"
+
+  - id: argocd-sync
+    command: argocd-sync
+    depends_on: [approval, diff-report]
+    context: fresh
+    trigger_rule: none_failed_min_one_success
+
+  - id: health-check
+    command: k8s-health-check
+    depends_on: [argocd-sync]
+    context: fresh
+
+  - id: notify
+    command: notify-deploy-complete
+    depends_on: [health-check]
+    context: fresh

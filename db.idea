@@ -1,0 +1,10 @@
+database for aios:
+    for the entire ai os i need to have a database 
+    having: 
+        logs 
+        reports/artifacts (daily, weekly, monthly)
+        issues happend
+        second brain ingest 
+        mcp ingests (real time) and processeds 
+        cronjobs 
+    As a senior system designer and database engineer, architect a optimized system for the entire ai os database.      

@@ -1,0 +1,62 @@
+# archon-cost-optimize
+# Identify cost optimization opportunities, require approval, and prepare a tracked
+# execution and verification summary.
+
+name: cost-optimize
+description: |
+  Identify cost optimization opportunities, require approval, and prepare a tracked
+  execution and verification summary. Use when the team is ready to act on idle or
+  oversized infrastructure after a FinOps review. This workflow packages the highest
+  confidence savings actions, puts them through approval, and records the planned
+  optimization path and verification notes.
+  NOT for: monthly reporting without intended action.
+version: 1.0.0
+
+environment: $ENVIRONMENT
+
+nodes:
+  - id: preflight
+    command: devops-preflight
+    context: fresh
+
+  - id: identify-waste
+    command: waste-identify
+    depends_on: [preflight]
+    context: fresh
+
+  - id: analyze-right-sizing
+    command: right-sizing-analyze
+    depends_on: [identify-waste]
+    context: fresh
+
+  - id: approval
+    approval:
+      message: |
+        ## Cost Optimization Approval Required
+
+        **Environment:** $ENVIRONMENT
+        **Scope:** $ARGUMENTS
+
+        Review:
+        - $ARTIFACTS_DIR/waste-candidates.md
+        - $ARTIFACTS_DIR/right-sizing-report.md
+
+        Approve only if the proposed savings actions are acceptable for this environment.
+      capture_response: true
+    depends_on: [analyze-right-sizing]
+
+  - id: prepare-optimization-plan
+    prompt: |
+      Read the approved waste and right-sizing artifacts and write:
+      - an execution plan to $ARTIFACTS_DIR/cost-optimization-plan.md
+      - a verification checklist to $ARTIFACTS_DIR/cost-optimization-verify.md
+
+      In the execution plan include:
+      - which actions to take first
+      - the expected savings confidence
+      - what must be monitored after each change
+
+      In the verification checklist describe how operators should confirm that service
+      health is unaffected after the savings actions are applied.
+    depends_on: [approval]
+    context: fresh

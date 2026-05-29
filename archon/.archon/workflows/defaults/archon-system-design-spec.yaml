@@ -1,0 +1,238 @@
+name: archon-system-design-spec
+description: |
+  Use when: User wants a system design specification, architecture recommendation,
+  trade-off analysis, or explicit technical decisions before implementation.
+  Triggers: "system design", "design spec", "architecture spec", "solution architecture",
+            "architecture choices", "compare alternatives", "technical design",
+            "choose stack", "deployment architecture", "infrastructure choices".
+  NOT for: Product discovery without architecture detail (use archon-interactive-prd).
+  NOT for: Codebase cleanup or simplification work (use archon-architect).
+  NOT for: Implementation after the design is already decided (use archon-piv-loop,
+           archon-plan-to-pr, or archon-feature-development).
+
+  Interactive workflow that turns vague architectural needs into a concrete,
+  decision-ready system design package:
+  1. Clarify problem, scope, and deployment context
+  2. Audit what already exists in the repo and current configuration
+  3. Gather non-functional requirements, constraints, compliance, and budget
+  4. Compare viable architecture options with explicit trade-offs
+  5. Recommend a default and write a system design spec plus decision log
+
+provider: claude
+interactive: true
+
+nodes:
+  - id: initiate
+    model: sonnet
+    prompt: |
+      You are starting a system design specification process.
+      Your job is to force clarity before implementation starts.
+
+      The user wants help with: $ARGUMENTS
+
+      If the request is clear, restate it in 2-3 sentences and confirm your
+      current understanding.
+
+      Then present these framing questions all at once:
+
+      **System Design Framing**
+
+      1. What exactly are we designing: a new system, a major feature, an integration,
+         a deployment topology, or a migration?
+      2. What user or business flow must this design support?
+      3. What is the expected delivery horizon: prototype, MVP, production launch,
+         or enterprise scale?
+      4. What parts are already fixed, and what parts are still open for decision?
+      5. Are there any hard constraints already known: cloud/vendor, region, budget,
+         compliance, runtime, language, database, or team skill limits?
+      6. What failure would be unacceptable here: downtime, data loss, latency,
+         security breach, runaway cost, or slow delivery?
+      7. Is this design for a greenfield system or for an existing codebase that
+         must be extended carefully?
+      8. What would a "good decision" look like: cheapest, fastest to ship, easiest
+         to operate, easiest to scale, safest, or most flexible?
+
+      Do not design yet. Just establish the decision frame.
+
+  - id: framing-gate
+    approval:
+      message: "Answer the framing questions above. This becomes the basis for the architecture analysis."
+      capture_response: true
+    depends_on: [initiate]
+
+  - id: existing-state
+    model: sonnet
+    prompt: |
+      You are auditing the existing technical context before proposing architecture.
+
+      **User request**: $ARGUMENTS
+      **Framing answers**: $framing-gate.output
+
+      First, inspect what already exists. Read actual repo files before making claims.
+      Prioritize:
+      - CLAUDE.md
+      - README.md
+      - package manifests and workspace structure
+      - .archon/config*.yaml
+      - deployment docs, docker files, infra folders, migrations
+      - relevant workflow and command files if they affect the design
+
+      Build a grounded inventory:
+      - current runtime and package structure
+      - current database and persistence posture
+      - existing deployment model
+      - existing observability/security/compliance signals
+      - existing integration points or constraints
+      - what appears missing for the requested design
+
+      Present:
+
+      **What Already Exists**
+      - {repo capability or constraint} at `{file:line}` - {why it matters}
+      - {repo capability or constraint} at `{file:line}` - {why it matters}
+
+      **Initial Design Implications**
+      - {implication 1}
+      - {implication 2}
+      - {main thing the user should not redesign unnecessarily}
+
+      Then ask these architecture input questions:
+
+      1. Scale: what are the expected users, requests, jobs, or data volumes?
+      2. Reliability: what uptime target or blast-radius tolerance matters?
+      3. Performance: are there hard latency, throughput, or batch-window requirements?
+      4. Data: what data is stored, how sensitive is it, and what retention or residency rules apply?
+      5. Integrations: what external systems, APIs, queues, auth providers, or event sources are required?
+      6. Budget: what monthly or project budget ceiling matters, and where is spend most sensitive?
+      7. Operations: who will run this system, and how much operational burden is acceptable?
+      8. Team fit: what technologies is the team already strong in, and what should be avoided?
+      9. Lock-in: how much vendor lock-in is acceptable?
+      10. Future shape: what change is most likely later - more traffic, more tenants,
+          more regions, more teams, more products, or stricter compliance?
+    depends_on: [framing-gate]
+
+  - id: constraints-gate
+    approval:
+      message: "Answer the architecture input questions above. Include numbers when you have them and rough estimates when you do not."
+      capture_response: true
+    depends_on: [existing-state]
+
+  - id: option-analysis
+    model: sonnet
+    prompt: |
+      You are comparing architecture options and must recommend a default.
+
+      **User request**: $ARGUMENTS
+      **Framing answers**: $framing-gate.output
+      **Constraint answers**: $constraints-gate.output
+
+      Use the repo audit plus the user's answers to identify the smallest useful
+      set of viable options. Do not invent generic alternatives that do not fit
+      this codebase or problem. Usually 2-4 options is enough.
+
+      For each option, compare trade-offs across:
+      - delivery speed
+      - implementation complexity
+      - operating complexity
+      - steady-state cost
+      - scale headroom
+      - security/compliance fit
+      - resilience/recovery
+      - data model fit
+      - team familiarity
+      - vendor lock-in
+
+      Prefer options that extend existing repo patterns unless there is a clear
+      reason to break from them.
+
+      Present:
+
+      **Decision Drivers**
+      - {driver}
+      - {driver}
+      - {driver}
+
+      **Option Matrix**
+      | Option | Good For | Main Costs | Main Risks | Why You Would Choose It |
+      |--------|----------|------------|------------|--------------------------|
+      | A | ... | ... | ... | ... |
+      | B | ... | ... | ... | ... |
+
+      **Recommended Default**
+      - Choice: {option}
+      - Why: {2-4 bullet points}
+      - Why not the others: {1 short bullet per rejected option}
+
+      Then ask the final decision questions:
+
+      1. Do you want to optimize for fastest delivery, lowest cost, lowest risk, or highest future flexibility?
+      2. Which recommendation feels wrong or politically hard even if technically sound?
+      3. Are there any mandatory technologies, providers, or deployment models the recommendation must honor?
+      4. Which decisions should be fixed now versus deferred behind an interface or milestone gate?
+      5. Should the final spec bias toward MVP pragmatism or long-term platform design?
+    depends_on: [constraints-gate]
+
+  - id: decisions-gate
+    approval:
+      message: "Answer the final decision questions above. This locks the recommendation and what should be deferred."
+      capture_response: true
+    depends_on: [option-analysis]
+
+  - id: generate
+    model: sonnet
+    prompt: |
+      You are writing a complete system design package from the prior analysis.
+
+      **User request**: $ARGUMENTS
+      **Framing answers**: $framing-gate.output
+      **Constraint answers**: $constraints-gate.output
+      **Final decision answers**: $decisions-gate.output
+
+      First create the output directory:
+
+      ```bash
+      mkdir -p "$ARTIFACTS_DIR/architecture"
+      ```
+
+      Write these files:
+      - `$ARTIFACTS_DIR/architecture/system-design-spec.md`
+      - `$ARTIFACTS_DIR/architecture/decision-log.md`
+
+      In `system-design-spec.md`, include:
+      1. Executive summary
+      2. Problem and scope
+      3. Existing repo context (with file:line references)
+      4. Decision drivers
+      5. Functional requirements
+      6. Non-functional requirements
+      7. Constraints and assumptions
+      8. Option comparison table
+      9. Recommended architecture
+      10. Proposed topology / major components
+      11. Data and state decisions
+      12. Security, privacy, and compliance considerations
+      13. Reliability, scaling, and observability approach
+      14. Cost posture and budget fit
+      15. Delivery phases: now / next / later
+      16. Risks and mitigation
+      17. Open questions
+
+      In `decision-log.md`, record ADR-style decisions in a compact table:
+      | Decision | Status | Chosen Option | Why | Deferred? |
+
+      Include decisions such as:
+      - runtime / app shape
+      - database / storage
+      - deployment model
+      - integration pattern
+      - async processing strategy
+      - observability baseline
+      - security/compliance posture
+      - cost strategy
+
+      Rules:
+      - Prefer concrete recommendations over generic advice.
+      - If a decision is intentionally deferred, say what signal should trigger it later.
+      - If cost numbers are unavailable, give relative cost posture instead of fake precision.
+      - Keep the design aligned with the current repo unless the user explicitly wants a reset.
+    depends_on: [decisions-gate]

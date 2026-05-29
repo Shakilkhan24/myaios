@@ -1,0 +1,16 @@
+cronjobs:
+    triggering types: 
+        fixed time cycle 
+        dynamic
+        manual
+        workflow based cycle (dependent triggers)
+
+    components:
+        time setting 
+        system prompt 
+        triggering data ingestions (real time/or manual)
+        scripts 
+        output structure 
+
+    Internal triggers:
+        certain cronjobs events would trigger internal (ai os) system like data saving or modifying certain components of ai os.      

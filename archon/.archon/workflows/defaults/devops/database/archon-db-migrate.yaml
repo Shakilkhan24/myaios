@@ -1,0 +1,62 @@
+# archon-db-migrate
+# Back up the database, validate migrations, require approval when needed,
+# apply the migration set, and verify the outcome.
+
+name: db-migrate
+description: |
+  Back up the database, validate migrations, require approval when needed, apply the
+  migration set, and verify the outcome. Use when performing schema changes or controlled
+  database migrations. This workflow creates a backup first, validates the migration set,
+  gates production writes with approval, and records post-apply analysis artifacts.
+  NOT for: read-only performance analysis or backup-only verification.
+version: 1.0.0
+
+environment: $ENVIRONMENT
+
+nodes:
+  - id: preflight
+    command: devops-preflight
+    context: fresh
+
+  - id: backup-database
+    command: db-backup
+    depends_on: [preflight]
+    context: fresh
+
+  - id: validate-migrations
+    command: db-migration-validate
+    depends_on: [backup-database]
+    context: fresh
+
+  - id: approval
+    approval:
+      message: |
+        ## Database Migration Approval Required
+
+        **Environment:** $ENVIRONMENT
+        **Request:** $ARGUMENTS
+
+        Review:
+        - $ARTIFACTS_DIR/db-backup.json
+        - $ARTIFACTS_DIR/db-migration-validate.json
+
+        Approve before applying the migration set.
+      capture_response: true
+    depends_on: [validate-migrations]
+    when: "$ENVIRONMENT == 'production'"
+
+  - id: apply-migrations
+    command: db-migration-apply
+    depends_on: [approval, validate-migrations]
+    context: fresh
+    trigger_rule: none_failed_min_one_success
+
+  - id: verify-performance
+    command: db-performance-analyze
+    depends_on: [apply-migrations]
+    context: fresh
+
+  - id: notify
+    command: notify-deploy-complete
+    depends_on: [verify-performance]
+    context: fresh

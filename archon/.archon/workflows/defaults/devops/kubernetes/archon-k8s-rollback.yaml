@@ -1,0 +1,78 @@
+# archon-k8s-rollback
+# Roll back a Helm release to a previous revision with state capture and health verification.
+
+name: k8s-rollback
+description: |
+  Roll back a Helm release to a previous revision with state capture and health verification.
+  Use when a recent deployment is causing issues and must be reverted immediately. Captures
+  current state, lists available revisions, requires approval, executes rollback, and verifies health.
+  NOT for: scaling operations, new deployments, or infrastructure changes.
+version: 1.0.0
+
+environment: $ENVIRONMENT
+
+nodes:
+  - id: preflight
+    command: devops-preflight
+    context: fresh
+
+  - id: capture-current-state
+    bash: |
+      kubectl get pods -n "$HELM_NAMESPACE" -l "app.kubernetes.io/instance=$HELM_RELEASE" -o wide \
+        > "$ARTIFACTS_DIR/pre-rollback-pods.txt"
+      kubectl get events -n "$HELM_NAMESPACE" --sort-by='.lastTimestamp' 2>/dev/null | tail -30 \
+        > "$ARTIFACTS_DIR/pre-rollback-events.txt"
+      helm list -n "$HELM_NAMESPACE" --filter "^${HELM_RELEASE}$" -o json \
+        > "$ARTIFACTS_DIR/pre-rollback-release.json"
+    depends_on: [preflight]
+    context: fresh
+
+  - id: list-revisions
+    bash: |
+      helm history "$HELM_RELEASE" -n "$HELM_NAMESPACE" --max 10 \
+        2>&1 | tee "$ARTIFACTS_DIR/helm-history.txt"
+      CURRENT=$(helm list -n "$HELM_NAMESPACE" --filter "^${HELM_RELEASE}$" -o json | jq -r '.[0].revision // "0"')
+      TARGET=$((CURRENT - 1))
+      echo "{\"current_revision\":$CURRENT,\"target_revision\":$TARGET}" > "$ARTIFACTS_DIR/rollback-target.json"
+    depends_on: [capture-current-state]
+    context: fresh
+
+  - id: rollback-approval
+    approval:
+      message: |
+        ## Helm Rollback Approval
+
+        **Environment:** $ENVIRONMENT
+        **Release:** $HELM_RELEASE
+        **Namespace:** $HELM_NAMESPACE
+
+        ### Revision History
+        See $ARTIFACTS_DIR/helm-history.txt
+
+        ### Current Pod State
+        See $ARTIFACTS_DIR/pre-rollback-pods.txt
+
+        **Approve to roll back to the previous revision.**
+    depends_on: [list-revisions]
+
+  - id: helm-rollback
+    command: helm-rollback
+    depends_on: [rollback-approval]
+    context: fresh
+
+  - id: health-check-loop
+    loop:
+      prompt: |
+        Verify health after rollback of $HELM_RELEASE in $HELM_NAMESPACE.
+        Check pods, rollout status, and endpoints.
+        If healthy: <promise>HEALTHY</promise>
+        If degraded: <promise>DEGRADED</promise>
+      until: HEALTHY|DEGRADED
+      max_iterations: 15
+      fresh_context: true
+    depends_on: [helm-rollback]
+
+  - id: notify
+    command: notify-deploy-complete
+    depends_on: [health-check-loop]
+    context: fresh

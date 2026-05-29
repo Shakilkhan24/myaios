@@ -1,0 +1,37 @@
+I would have at least 10 mcps for my ai operating system. 
+For examples:
+    github
+    slack
+    telegram
+    google workspace
+    file system
+    browser (playwright)
+    .
+    .
+    .
+
+
+First list them.
+Create:
+    .env file for their api keys.
+    config.json for all mcps' configuration informations. 
+    A test script for testing all of the mcps if each of them are connected and working correctly or not. (it would be there always, such that i can use this script throughout my entire ai os system working, would save my lots of time)
+
+Have: 
+    one /skill for each of the mcps for sure
+    apply the skill on the retrieved datas from the mcps to do certain actions 
+        analysis
+        documentation 
+        second brain ingesting 
+        action by mcps to mcp sources (tools, websites or others)
+    Often there would be skill to combine multiple mcps like one or 2. Often combining more.
+    Sometimes order of skills as a set in different scenarios. 
+
+
+
+
+
+[MAJOR POINT]:
+    the skills for the mcps are not static, they would update themselves to fetch the best outcome possible. 
+    For this task, there would be a skill which would work as a judge, working on some deterministic or abstract metrics, goals, objectives and more.
+

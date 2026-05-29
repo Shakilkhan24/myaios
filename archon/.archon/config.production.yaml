@@ -1,0 +1,17 @@
+# Production environment overrides
+# Merged on top of config.yaml when ARCHON_ENVIRONMENT=production
+devops:
+  environment: production
+  gates:
+    require_two_approvals_prod: true
+    slo_check_before_deploy: true
+    change_freeze_check: true
+    cab_integration: false
+  security:
+    container_scan_severity_block: MEDIUM
+    sast_severity_block: HIGH
+    sbom_generate: true
+    sign_images: true
+  cost:
+    estimate_before_apply: true
+    monthly_budget_limit: 50000

@@ -1,0 +1,96 @@
+# ── Original Basic Archon configuration (unchanged) ────────────────────────────
+worktree:
+  baseBranch: dev
+
+docs:
+  path: packages/docs-web/src/content/docs
+
+# ── DevOps Extension Block ───────────────────────────────────────────────────
+devops:
+
+  # Current deployment context
+  environment: dev                      # dev | staging | production
+  stack: archon                         # logical stack name (used in naming)
+  team: platform                        # team context (used in PR/issue creation)
+
+  # Cloud configuration
+  cloud:
+    provider: aws                       # aws | gcp | azure | multi | none
+    region: us-east-1
+    secondary_regions: []              # for multi-region deployments
+    profile: default                   # AWS_PROFILE / gcloud config / az account
+    account_id: null                   # AWS account ID / GCP project / Azure subscription
+
+  # Kubernetes configuration
+  kubernetes:
+    context: my-eks-cluster
+    namespace: default
+    deploy_namespace: production       # separate deploy target namespace
+    helm_repo_url: null               # internal chart museum URL
+    argocd_url: null                  # ArgoCD server URL
+    flux_namespace: flux-system
+
+  # Terraform/OpenTofu configuration
+  terraform:
+    workspace: default
+    backend: s3                        # s3 | gcs | azurerm | remote | local | none
+    root_module: infra/                # path to terraform root
+    modules_dir: infra/modules/
+    plan_file: $ARTIFACTS_DIR/tf.plan  # where to write plan binary
+    var_file: null                     # terraform.tfvars path
+
+  # Ansible configuration
+  ansible:
+    inventory: inventory/
+    playbooks_dir: playbooks/
+    vault_password_file: null
+    become: true
+
+  # Security thresholds
+  security:
+    scan_on_every_workflow: true
+    container_scan_severity_block: HIGH    # CRITICAL | HIGH | MEDIUM | LOW
+    sast_severity_block: HIGH
+    secret_scan: true                      # detect secrets in git history and code
+    sbom_generate: true                    # generate SBOM on every build
+    sign_images: false                     # require Cosign image signing
+    slsa_level: 0                          # 0=none, 1=basic, 2=hosted, 3=hardened
+    policy_engine: none                    # opa | gatekeeper | kyverno | sentinel | none
+
+  # Compliance
+  compliance:
+    frameworks: []                         # [cis-level1, cis-level2, soc2-type2, pci-dss, hipaa, iso27001]
+    report_format: html                    # html | json | pdf
+    strict_mode: false                     # fail workflow if any control fails
+    exemption_file: .archon/compliance/exemptions.yaml
+
+  # Database
+  database:
+    migration_tool: flyway                 # flyway | liquibase | atlas | dbmate | none
+    backup_before_migrate: true
+    dry_run_before_apply: true
+
+  # Cost management
+  cost:
+    currency: USD
+    monthly_budget_limit: null            # null = no enforcement
+    estimate_before_apply: true           # run Infracost before terraform apply approval
+    kubecost_url: null
+    opencost_url: null
+
+  # Notifications (supplement to platform adapters)
+  notifications:
+    slack_channel: null                   # #devops-alerts
+    pagerduty_routing_key: null
+    teams_webhook: null
+    email: null
+    on_events: [deploy_complete, deploy_failed, incident_opened, security_critical]
+
+  # Change management gates
+  gates:
+    prod_approvers: []                    # GitHub usernames
+    require_two_approvals_prod: false
+    cab_integration: false               # Change Advisory Board
+    itsm_url: null                       # ServiceNow / Jira Service Desk
+    change_freeze_check: false           # check for change freeze windows
+    slo_check_before_deploy: true        # block deploy if error budget is exhausted

@@ -1,0 +1,59 @@
+# archon-alert-investigate
+# Investigate an alert by pulling metrics and logs, correlating the evidence,
+# and producing a structured incident analysis report.
+
+name: alert-investigate
+description: |
+  Investigate an alert by pulling metrics and logs, correlating the evidence, and producing
+  a structured incident analysis report. Use when an alert fires and an operator needs a
+  fast, evidence-backed starting point for diagnosis. This workflow queries Prometheus and
+  Loki, correlates the results, and drafts a recommended next-action summary.
+  NOT for: closing incidents or deploying dashboards.
+version: 1.0.0
+
+environment: $ENVIRONMENT
+
+nodes:
+  - id: preflight
+    command: devops-preflight
+    context: fresh
+
+  - id: query-metrics
+    command: prometheus-query
+    depends_on: [preflight]
+    context: fresh
+
+  - id: search-logs
+    command: loki-search
+    depends_on: [preflight]
+    context: fresh
+
+  - id: correlate-alert
+    command: alert-correlate
+    depends_on: [query-metrics, search-logs]
+    context: fresh
+
+  - id: investigation-report
+    prompt: |
+      Read:
+      - $ARTIFACTS_DIR/metrics-query.json
+      - $ARTIFACTS_DIR/loki-search.json
+      - $ARTIFACTS_DIR/alert-correlation.md
+
+      Write:
+      - $ARTIFACTS_DIR/alert-investigation.md
+      - $ARTIFACTS_DIR/alert-remediation-options.md
+
+      In $ARTIFACTS_DIR/alert-investigation.md, include:
+      - the most likely cause
+      - confidence level
+      - what evidence supports it
+      - what evidence is still missing
+
+      In $ARTIFACTS_DIR/alert-remediation-options.md, include:
+      - fastest safe mitigation
+      - deeper corrective action
+      - rollback or containment options if relevant
+      - the dependency on any missing evidence before action
+    depends_on: [correlate-alert]
+    context: fresh

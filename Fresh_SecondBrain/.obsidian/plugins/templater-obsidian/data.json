@@ -1,0 +1,50 @@
+{
+  "templates_folder": "templates",
+  "templates_pairs": [
+    ["", ""]
+  ],
+  "trigger_on_file_creation": false,
+  "auto_jump_to_cursor": true,
+  "enable_system_commands": false,
+  "shell_path": "",
+  "user_scripts_folder": "",
+  "enable_folder_templates": true,
+  "folder_templates": [
+    {
+      "folder": "wiki/sources",
+      "template": "templates/source-template.md"
+    },
+    {
+      "folder": "wiki/concepts",
+      "template": "templates/concept-template.md"
+    },
+    {
+      "folder": "wiki/entities",
+      "template": "templates/entity-template.md"
+    },
+    {
+      "folder": "wiki/comparisons",
+      "template": "templates/comparison-template.md"
+    },
+    {
+      "folder": "wiki/queries",
+      "template": "templates/query-template.md"
+    },
+    {
+      "folder": "wiki/timelines",
+      "template": "templates/timeline-template.md"
+    },
+    {
+      "folder": "wiki/maintenance",
+      "template": "templates/lint-report-template.md"
+    }
+  ],
+  "syntax_highlighting": true,
+  "syntax_highlighting_mobile": false,
+  "enabled_templates_hotkey": [
+    "templates/source-template.md",
+    "templates/concept-template.md",
+    "templates/entity-template.md"
+  ],
+  "startup_templates": []
+}

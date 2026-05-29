@@ -1,0 +1,10 @@
+# Staging environment overrides
+# Merged on top of config.yaml when ARCHON_ENVIRONMENT=staging
+devops:
+  environment: staging
+  gates:
+    require_two_approvals_prod: false
+    slo_check_before_deploy: true
+  security:
+    container_scan_severity_block: HIGH
+    sast_severity_block: HIGH

@@ -1,0 +1,12 @@
+{
+  "baseFontSize": 16,
+  "accentColor": "#cba6f7",
+  "interfaceFontFamily": "Inter, -apple-system, BlinkMacSystemFont, sans-serif",
+  "textFontFamily": "Inter, -apple-system, BlinkMacSystemFont, sans-serif",
+  "monospaceFontFamily": "JetBrains Mono, Fira Code, monospace",
+  "cssTheme": "",
+  "enabledCssSnippets": [
+    "wiki-callouts",
+    "wiki-layout"
+  ]
+}

@@ -1,0 +1,80 @@
+# archon-k8s-namespace-bootstrap
+# Create and configure a new Kubernetes namespace with RBAC, NetworkPolicy, and quotas.
+
+name: k8s-namespace-bootstrap
+description: |
+  Create and configure a new Kubernetes namespace with RBAC, NetworkPolicy, LimitRange,
+  ResourceQuota, and service accounts. Use when onboarding a new team or service into the
+  cluster. Idempotent — safe to run multiple times.
+  NOT for: deploying applications, modifying existing namespaces, or cluster-level operations.
+version: 1.0.0
+
+environment: $ENVIRONMENT
+
+nodes:
+  - id: preflight
+    command: devops-preflight
+    context: fresh
+
+  - id: plan-namespace
+    prompt: |
+      Plan the namespace creation for "$ARGUMENTS":
+      1. Choose appropriate ResourceQuota limits based on $ENVIRONMENT
+      2. Define LimitRange defaults for containers
+      3. Plan NetworkPolicy rules (default deny + allow list)
+      4. Determine RBAC roles needed (admin, developer, viewer)
+      5. Identify service accounts required
+      Write the plan to $ARTIFACTS_DIR/namespace-plan.md
+    depends_on: [preflight]
+    context: fresh
+
+  - id: security-policy-check
+    prompt: |
+      Review the namespace plan at $ARTIFACTS_DIR/namespace-plan.md for security:
+      1. Verify NetworkPolicy includes default-deny-ingress
+      2. Verify ResourceQuota prevents unbounded resource usage
+      3. Verify RBAC follows least-privilege principle
+      4. Verify no cluster-admin bindings are being created
+      Write findings to $ARTIFACTS_DIR/namespace-security-review.json
+    depends_on: [plan-namespace]
+    context: fresh
+
+  - id: approval
+    approval:
+      message: |
+        ## Namespace Bootstrap Approval
+
+        **Namespace:** $ARGUMENTS
+        **Environment:** $ENVIRONMENT
+        **Cluster:** $K8S_CONTEXT
+
+        ### Plan
+        See $ARTIFACTS_DIR/namespace-plan.md
+
+        ### Security Review
+        See $ARTIFACTS_DIR/namespace-security-review.json
+
+        **Approve to create and configure the namespace.**
+    depends_on: [security-policy-check]
+
+  - id: kubectl-apply-namespace
+    command: k8s-namespace-create
+    depends_on: [approval]
+    context: fresh
+
+  - id: verify-policies
+    bash: |
+      NAMESPACE="$ARGUMENTS"
+      echo "Verifying namespace $NAMESPACE..."
+      kubectl get namespace "$NAMESPACE" -o json > "$ARTIFACTS_DIR/ns-verify.json"
+      kubectl get resourcequota -n "$NAMESPACE" -o json >> "$ARTIFACTS_DIR/ns-verify.json"
+      kubectl get limitrange -n "$NAMESPACE" -o json >> "$ARTIFACTS_DIR/ns-verify.json"
+      kubectl get networkpolicy -n "$NAMESPACE" -o json >> "$ARTIFACTS_DIR/ns-verify.json"
+      echo "Namespace verification complete"
+    depends_on: [kubectl-apply-namespace]
+    context: fresh
+
+  - id: notify
+    command: notify-deploy-complete
+    depends_on: [verify-policies]
+    context: fresh

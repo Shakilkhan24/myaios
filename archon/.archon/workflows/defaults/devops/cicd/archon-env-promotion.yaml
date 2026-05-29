@@ -1,0 +1,94 @@
+# archon-env-promotion
+# Promote a tested artifact between environments with approval, deployment,
+# health verification, and rollback on failure.
+
+name: env-promotion
+description: |
+  Promote a tested artifact between environments with approval, deployment,
+  health verification, and rollback on failure. Use when moving a known-good
+  image tag or release candidate from one environment to the next after testing.
+  This workflow captures the promotion intent, applies the target deployment,
+  and verifies health before considering the promotion complete.
+  NOT for: initial bootstrap, full release trains, or dependency-only updates.
+version: 1.0.0
+
+environment: $ENVIRONMENT
+
+nodes:
+  - id: preflight
+    command: devops-preflight
+    context: fresh
+
+  - id: verify-source-env
+    bash: |
+      cat > "$ARTIFACTS_DIR/promotion-source.json" << EOF
+      {
+        "request": "$ARGUMENTS",
+        "environment": "$ENVIRONMENT",
+        "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+      }
+      EOF
+    depends_on: [preflight]
+    context: fresh
+
+  - id: promote-artifact
+    command: image-promote
+    depends_on: [verify-source-env]
+    context: fresh
+
+  - id: deployment-diff
+    command: helm-plan
+    depends_on: [promote-artifact]
+    context: fresh
+
+  - id: impact-classify
+    command: change-impact-classify
+    depends_on: [deployment-diff]
+    context: fresh
+
+  - id: promotion-approval
+    approval:
+      message: |
+        ## Environment Promotion Approval Required
+
+        **Request:** $ARGUMENTS
+        **Current environment:** $ENVIRONMENT
+
+        Review:
+        - $ARTIFACTS_DIR/promotion-source.json
+        - $ARTIFACTS_DIR/helm-diff.txt
+        - $impact-classify.output.blast_radius
+
+        Approve only if the target promotion is understood and reversible.
+      capture_response: true
+    depends_on: [impact-classify]
+
+  - id: deploy-target
+    command: helm-upgrade
+    depends_on: [promotion-approval]
+    context: fresh
+
+  - id: health-check-loop
+    loop:
+      prompt: |
+        Check whether the promoted target environment is healthy.
+
+        Emit <promise>HEALTHY</promise> when the target is healthy.
+        Emit <promise>DEGRADED</promise> when the deployment is failing.
+        Otherwise emit nothing so the loop retries.
+      until: HEALTHY|DEGRADED
+      max_iterations: 15
+      fresh_context: true
+    depends_on: [deploy-target]
+
+  - id: rollback-if-degraded
+    command: helm-rollback
+    depends_on: [health-check-loop]
+    context: fresh
+    when: "$health-check-loop.output == 'DEGRADED'"
+
+  - id: notify
+    command: notify-deploy-complete
+    depends_on: [health-check-loop, rollback-if-degraded]
+    context: fresh
+    trigger_rule: all_done

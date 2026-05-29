@@ -1,0 +1,85 @@
+# archon-terraform-destroy
+# Safely destroy Terraform-managed infrastructure with mandatory human approval,
+# state backup, and post-destroy verification.
+
+name: terraform-destroy
+description: |
+  Safely destroy Terraform-managed infrastructure with mandatory human approval,
+  state backup, and post-destroy verification. Use when decommissioning infrastructure.
+  Requires ENVIRONMENT and explicit confirmation. This is a CRITICAL blast-radius operation.
+  NOT for: plan-only operations, drift detection, partial resource removal.
+version: 1.0.0
+
+environment: $ENVIRONMENT
+
+nodes:
+  - id: preflight
+    command: devops-preflight
+    context: fresh
+
+  - id: state-backup
+    bash: |
+      cd "$TF_ROOT"
+      terraform init -input=false -no-color > /dev/null 2>&1
+      terraform state pull > "$ARTIFACTS_DIR/pre-destroy-state-backup.json"
+      echo "State backup saved. Serial: $(jq '.serial' "$ARTIFACTS_DIR/pre-destroy-state-backup.json")"
+    depends_on: [preflight]
+    context: fresh
+
+  - id: plan-destroy
+    command: terraform-destroy
+    depends_on: [state-backup]
+    context: fresh
+
+  - id: security-check
+    command: tfsec-scan
+    depends_on: [plan-destroy]
+    context: fresh
+
+  - id: impact-classify
+    command: change-impact-classify
+    depends_on: [security-check]
+    context: fresh
+
+  - id: approval
+    approval:
+      message: |
+        ## ⚠️ CRITICAL: Terraform Destroy Approval Required
+
+        **Environment:** $ENVIRONMENT
+        **Stack:** $STACK
+        **Action:** DESTROY all resources
+
+        ### Impact Assessment
+        Blast Radius: CRITICAL
+        Resources to destroy: See $ARTIFACTS_DIR/tf-destroy-plan.txt
+
+        ### Rollback Procedure
+        State backup: $ARTIFACTS_DIR/pre-destroy-state-backup.json
+        Rollback: terraform state push + terraform apply
+
+        **THIS ACTION IS DESTRUCTIVE. Review carefully before approving.**
+      capture_response: true
+    depends_on: [impact-classify]
+
+  - id: destroy
+    bash: |
+      cd "$TF_ROOT"
+      terraform apply -input=false -no-color "$ARTIFACTS_DIR/tf-destroy.plan" \
+        2>&1 | tee "$ARTIFACTS_DIR/tf-destroy.log"
+    depends_on: [approval]
+    context: fresh
+
+  - id: verify-clean
+    bash: |
+      cd "$TF_ROOT"
+      REMAINING=$(terraform state list 2>/dev/null | wc -l)
+      echo "{\"remaining_resources\": $REMAINING, \"status\": \"$([ $REMAINING -eq 0 ] && echo 'clean' || echo 'partial')\"}" \
+        > "$ARTIFACTS_DIR/destroy-verify.json"
+    depends_on: [destroy]
+    context: fresh
+
+  - id: notify
+    command: notify-deploy-complete
+    depends_on: [verify-clean]
+    context: fresh

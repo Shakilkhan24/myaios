@@ -1,0 +1,85 @@
+# archon-security-audit
+# Run a comprehensive security audit across source, dependencies, container assets,
+# and repository secrets, then synthesize the findings into a prioritized report.
+
+name: security-audit
+description: |
+  Run a comprehensive security audit across source code, dependencies, repository secrets,
+  container artifacts, and SBOM generation. Use when performing a periodic security review
+  or before a release. This workflow runs parallel security checks, synthesizes the results,
+  and prepares a prioritized report with recommended follow-up actions.
+  NOT for: one-off deploy approvals, secret rotation, or compliance-only reviews.
+version: 1.0.0
+
+environment: $ENVIRONMENT
+
+nodes:
+  - id: preflight
+    command: devops-preflight
+    context: fresh
+
+  - id: sast-scan
+    command: sast-semgrep
+    depends_on: [preflight]
+    context: fresh
+
+  - id: secret-scan-gitleaks
+    command: secret-scan-gitleaks
+    depends_on: [preflight]
+    context: fresh
+
+  - id: secret-scan-trufflehog
+    command: secret-scan-trufflehog
+    depends_on: [preflight]
+    context: fresh
+
+  - id: dep-scan-npm
+    command: dep-audit-npm
+    depends_on: [preflight]
+    context: fresh
+
+  - id: image-scan
+    command: trivy-container-scan
+    depends_on: [preflight]
+    context: fresh
+
+  - id: generate-sbom
+    command: sbom-generate
+    depends_on: [preflight]
+    context: fresh
+
+  - id: prioritize-findings
+    prompt: |
+      You are aggregating security findings from a DevOps audit.
+
+      Review the artifacts produced by the completed scan nodes:
+      - $ARTIFACTS_DIR/sast-findings.json
+      - $ARTIFACTS_DIR/gitleaks-findings.json
+      - $ARTIFACTS_DIR/trufflehog-findings.json
+      - $ARTIFACTS_DIR/dep-audit-npm.json
+      - $ARTIFACTS_DIR/trivy-scan.json
+      - $ARTIFACTS_DIR/sbom.json
+
+      Write:
+      - $ARTIFACTS_DIR/security-audit-summary.md
+      - $ARTIFACTS_DIR/security-priority-plan.md
+
+      In $ARTIFACTS_DIR/security-audit-summary.md, cover:
+      1. The highest-risk findings by category
+      2. Any overlaps across scanners
+      3. Immediate actions vs backlog work
+      4. Whether release-blocking issues are present
+
+      In $ARTIFACTS_DIR/security-priority-plan.md, include:
+      - Critical actions to take immediately
+      - High-priority remediation for the current sprint
+      - Medium-priority hardening follow-ups
+      - Findings that can be accepted temporarily with rationale
+      - which summary findings are release-blocking
+    depends_on: [sast-scan, secret-scan-gitleaks, secret-scan-trufflehog, dep-scan-npm, image-scan, generate-sbom]
+    context: fresh
+
+  - id: notify
+    command: notify-security-findings
+    depends_on: [prioritize-findings]
+    context: fresh

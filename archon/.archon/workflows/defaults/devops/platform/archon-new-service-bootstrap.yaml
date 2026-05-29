@@ -1,0 +1,114 @@
+# archon-new-service-bootstrap
+# Bootstrap a new service with scaffold, CI-CD planning, security and policy
+# checks, approved namespace creation, monitoring setup, and platform onboarding.
+
+name: new-service-bootstrap
+description: |
+  Bootstrap a new microservice by preparing the repo scaffold, CI-CD plan,
+  Kubernetes namespace, monitoring setup, and Backstage registration artifacts.
+  Use when onboarding a brand-new service into the platform with an auditable
+  bootstrap path. This workflow runs preflight checks, records security and
+  policy review artifacts, requires approval before cluster writes, verifies the
+  created namespace, and finishes with onboarding outputs.
+  NOT for: updating an existing service, incident recovery, or normal app deploys.
+version: 1.0.0
+
+environment: $ENVIRONMENT
+
+nodes:
+  - id: preflight
+    command: devops-preflight
+    context: fresh
+
+  - id: create-repo-from-template
+    command: new-service-scaffold
+    depends_on: [preflight]
+    context: fresh
+
+  - id: security-scan
+    command: secret-scan-gitleaks
+    depends_on: [create-repo-from-template]
+    context: fresh
+
+  - id: policy-check
+    command: opa-policy-check
+    depends_on: [create-repo-from-template]
+    context: fresh
+
+  - id: prepare-bootstrap-plan
+    prompt: |
+      Review the new service bootstrap request using:
+      - $ARTIFACTS_DIR/new-service-scaffold.json
+      - $ARTIFACTS_DIR/gitleaks-findings.json
+      - $ARTIFACTS_DIR/opa-policy-check.json
+
+      Write:
+      - $ARTIFACTS_DIR/service-cicd-bootstrap.md
+      - $ARTIFACTS_DIR/service-cicd-bootstrap.json
+      - $ARTIFACTS_DIR/service-bootstrap-risk.md
+      - $ARTIFACTS_DIR/service-bootstrap-risk.json
+
+      Cover:
+      1. Required pipeline stages
+      2. Branch and release protections
+      3. Secrets and variables needed
+      4. Deployment environments and promotion path
+      5. Validation steps before first release
+      6. Any security or policy blockers
+      7. What must be approved before namespace creation
+      8. Remaining setup work after bootstrap
+    depends_on: [create-repo-from-template, security-scan, policy-check]
+    context: fresh
+
+  - id: bootstrap-approval
+    approval:
+      message: |
+        ## New Service Bootstrap Approval Required
+
+        **Request:** $ARGUMENTS
+        **Environment:** $ENVIRONMENT
+
+        Review:
+        - $ARTIFACTS_DIR/new-service-scaffold.md
+        - $ARTIFACTS_DIR/service-cicd-bootstrap.md
+        - $ARTIFACTS_DIR/service-bootstrap-risk.md
+
+        Approve only if the namespace creation and bootstrap plan are understood
+        and the security/policy findings are acceptable.
+      capture_response: true
+    depends_on: [prepare-bootstrap-plan]
+
+  - id: bootstrap-k8s-namespace
+    command: k8s-namespace-create
+    depends_on: [bootstrap-approval]
+    context: fresh
+
+  - id: verify-namespace
+    bash: |
+      kubectl get namespace "$ARGUMENTS" -o json > "$ARTIFACTS_DIR/service-namespace.json"
+    depends_on: [bootstrap-k8s-namespace]
+    context: fresh
+
+  - id: setup-monitoring
+    prompt: |
+      Read:
+      - $ARTIFACTS_DIR/new-service-scaffold.md
+      - $ARTIFACTS_DIR/service-namespace.json
+
+      Write:
+      - $ARTIFACTS_DIR/service-monitoring-bootstrap.md
+      - $ARTIFACTS_DIR/service-monitoring-bootstrap.json
+
+      Include dashboards, alerts, SLO candidates, log routing, and ownership.
+    depends_on: [verify-namespace]
+    context: fresh
+
+  - id: create-backstage-entry
+    command: backstage-register
+    depends_on: [setup-monitoring]
+    context: fresh
+
+  - id: notify-team
+    command: onboard-team
+    depends_on: [create-backstage-entry]
+    context: fresh

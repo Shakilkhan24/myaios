@@ -1,0 +1,57 @@
+# archon-terraform-drift-detect
+# Detect and report infrastructure drift between actual cloud state and Terraform code.
+
+name: terraform-drift-detect
+description: |
+  Detect and report infrastructure drift between actual cloud state and Terraform code.
+  Classify drift as intentional or accidental and propose remediation. Use when running
+  periodic drift detection, post-incident audit, or compliance verification.
+  NOT for: applying changes, destroying resources, or planning new infrastructure.
+version: 1.0.0
+
+environment: $ENVIRONMENT
+
+nodes:
+  - id: preflight
+    command: devops-preflight
+    context: fresh
+
+  - id: terraform-refresh
+    bash: |
+      cd "$TF_ROOT"
+      terraform init -input=false -no-color > /dev/null 2>&1
+      terraform workspace select "$TF_WORKSPACE" 2>/dev/null || true
+      terraform refresh -input=false -no-color 2>&1 | tee "$ARTIFACTS_DIR/tf-refresh.log"
+    depends_on: [preflight]
+    context: fresh
+
+  - id: drift-analysis
+    command: terraform-drift-analyze
+    depends_on: [terraform-refresh]
+    context: fresh
+
+  - id: classify-drift
+    command: change-impact-classify
+    depends_on: [drift-analysis]
+    context: fresh
+
+  - id: create-pr-if-minor
+    prompt: |
+      The drift analysis found minor, non-security-relevant drift.
+      Review $ARTIFACTS_DIR/drift-analysis.json and create a PR that updates the Terraform
+      code to match the current state, effectively importing the intentional drift.
+    depends_on: [classify-drift]
+    when: "$classify-drift.output.blast_radius == 'low' || $classify-drift.output.blast_radius == 'medium'"
+    context: fresh
+
+  - id: escalate-if-critical
+    command: notify-security-findings
+    depends_on: [classify-drift]
+    when: "$classify-drift.output.blast_radius == 'high' || $classify-drift.output.blast_radius == 'critical'"
+    context: fresh
+
+  - id: notify
+    command: notify-deploy-complete
+    depends_on: [create-pr-if-minor, escalate-if-critical]
+    context: fresh
+    trigger_rule: all_done

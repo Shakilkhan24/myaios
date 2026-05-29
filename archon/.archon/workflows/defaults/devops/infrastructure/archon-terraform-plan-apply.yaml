@@ -1,0 +1,99 @@
+# archon-terraform-plan-apply
+# Plan and safely apply a Terraform configuration with security scan, cost estimate,
+# human approval gate, and post-apply health verification.
+
+name: terraform-plan-apply
+description: |
+  Plan and safely apply Terraform infrastructure changes. Use when applying terraform
+  changes to any environment. NOT for destroy operations. This workflow runs terraform plan,
+  security scanning with tfsec, cost estimation with Infracost, classifies the blast radius,
+  requires human approval for production changes, applies the plan, and verifies the result.
+  NOT for: destroy operations, read-only validation, drift detection.
+version: 1.0.0
+
+environment: $ENVIRONMENT
+
+nodes:
+  - id: preflight
+    command: devops-preflight
+    context: fresh
+
+  - id: terraform-plan
+    command: terraform-plan
+    depends_on: [preflight]
+    context: fresh
+
+  - id: tfsec-scan
+    command: tfsec-scan
+    depends_on: [terraform-plan]
+    context: fresh
+
+  - id: infracost-estimate
+    command: infracost-estimate
+    depends_on: [terraform-plan]
+    context: fresh
+
+  - id: impact-classify
+    command: change-impact-classify
+    depends_on: [tfsec-scan, infracost-estimate]
+    context: fresh
+
+  - id: security-gate
+    bash: |
+      BLOCK_COUNT=$(jq '[.findings[] | select(.severity >= "'$SECURITY_BLOCK_SEVERITY'")] | length' \
+        "$ARTIFACTS_DIR/tfsec-findings.json" 2>/dev/null || echo "0")
+      echo "Security block count: $BLOCK_COUNT"
+      if [ "$BLOCK_COUNT" -gt "0" ]; then
+        echo "SECURITY GATE FAILED"
+        exit 1
+      fi
+    depends_on: [impact-classify]
+    context: fresh
+
+  - id: approval
+    approval:
+      message: |
+        ## Terraform Apply Approval Required
+
+        **Environment:** $ENVIRONMENT
+        **Stack:** $STACK
+        **Plan:** See $ARTIFACTS_DIR/tfplan.txt
+
+        ### Blast Radius Assessment
+        Blast Radius: $impact-classify.output.blast_radius
+
+        ### Cost Impact
+        See $ARTIFACTS_DIR/cost-estimate.json
+
+        ### Security Scan
+        See $ARTIFACTS_DIR/tfsec-findings.json
+
+        **Review the plan artifacts above, then approve or reject with reason.**
+      capture_response: true
+      on_reject:
+        prompt: "Address rejection feedback: $REJECTION_REASON. Revise the infrastructure code and re-run this workflow."
+        max_attempts: 3
+    depends_on: [security-gate]
+    when: "$impact-classify.output.requires_approval == 'true'"
+
+  - id: apply
+    command: terraform-apply
+    depends_on: [approval, impact-classify]
+    context: fresh
+    trigger_rule: none_failed_min_one_success
+
+  - id: verify
+    command: terraform-verify
+    depends_on: [apply]
+    context: fresh
+
+  - id: notify
+    command: notify-deploy-complete
+    depends_on: [verify]
+    context: fresh
+
+  - id: rollback
+    command: terraform-plan
+    depends_on: [verify]
+    context: fresh
+    when: "$verify.output.status != 'healthy'"

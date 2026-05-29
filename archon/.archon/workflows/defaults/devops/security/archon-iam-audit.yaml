@@ -1,0 +1,68 @@
+# archon-iam-audit
+# Audit IAM state across the configured cloud account, identify risky access,
+# and generate least-privilege recommendations.
+
+name: iam-audit
+description: |
+  Audit IAM roles, policies, and credentials in the configured cloud account to detect
+  overly permissive access, stale identities, and privilege escalation risks. Use when
+  performing access reviews, security investigations, or periodic least-privilege checks.
+  This workflow collects IAM data, analyzes policy risk, and writes a remediation report.
+  NOT for: deploying infrastructure or rotating a single secret.
+version: 1.0.0
+
+environment: $ENVIRONMENT
+
+nodes:
+  - id: preflight
+    command: devops-preflight
+    context: fresh
+
+  - id: collect-iam-data
+    bash: |
+      if [ "$CLOUD_PROVIDER" = "aws" ]; then
+        aws iam list-roles --output json > "$ARTIFACTS_DIR/iam-roles.json"
+        aws iam list-policies --scope Local --output json > "$ARTIFACTS_DIR/iam-policies.json"
+      elif [ "$CLOUD_PROVIDER" = "gcp" ]; then
+        gcloud projects get-iam-policy "$CLOUD_ACCOUNT_ID" --format=json > "$ARTIFACTS_DIR/iam-policies.json"
+      elif [ "$CLOUD_PROVIDER" = "azure" ]; then
+        az role assignment list --all --output json > "$ARTIFACTS_DIR/iam-policies.json"
+      else
+        echo "{}" > "$ARTIFACTS_DIR/iam-policies.json"
+      fi
+    depends_on: [preflight]
+    context: fresh
+
+  - id: generate-report
+    prompt: |
+      Review the collected IAM artifacts:
+      - $ARTIFACTS_DIR/iam-roles.json (if present)
+      - $ARTIFACTS_DIR/iam-policies.json
+
+      Write:
+      - $ARTIFACTS_DIR/iam-analysis.md
+      - $ARTIFACTS_DIR/iam-remediation-plan.md
+      - $ARTIFACTS_DIR/iam-audit-report.md
+
+      In $ARTIFACTS_DIR/iam-analysis.md, identify:
+      - wildcard permissions
+      - stale or suspicious identities
+      - privilege escalation paths
+      - missing guardrails
+
+      In $ARTIFACTS_DIR/iam-remediation-plan.md, include:
+      - immediate access reductions
+      - policy refactors to schedule
+      - monitoring or recertification improvements
+
+      In $ARTIFACTS_DIR/iam-audit-report.md, summarize:
+      - the highest-risk access issues
+      - the most important remediation actions
+      - the review posture and recommended follow-up cadence
+    depends_on: [collect-iam-data]
+    context: fresh
+
+  - id: notify
+    command: notify-security-findings
+    depends_on: [generate-report]
+    context: fresh

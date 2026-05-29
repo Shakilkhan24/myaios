@@ -1,0 +1,98 @@
+# archon-ansible-run
+# Execute an Ansible playbook with pre-run syntax check, dry-run diff,
+# human approval for write operations, and post-run verification.
+
+name: ansible-run
+description: |
+  Execute an Ansible playbook with pre-run syntax check, dry-run diff, human approval
+  for write operations, and post-run verification. Use when running configuration management
+  against hosts. Supports inventory validation, vault decryption, and idempotency verification.
+  NOT for: ad-hoc commands, inventory management only, or vault-only operations.
+version: 1.0.0
+
+environment: $ENVIRONMENT
+
+nodes:
+  - id: preflight
+    command: devops-preflight
+    context: fresh
+
+  - id: syntax-check
+    bash: |
+      ansible-playbook --syntax-check \
+        -i "$ANSIBLE_INVENTORY" \
+        "$ANSIBLE_PLAYBOOKS_DIR/$ARGUMENTS" \
+        2>&1 | tee "$ARTIFACTS_DIR/ansible-syntax.log"
+      if [ $? -ne 0 ]; then
+        echo "ERROR: Syntax check failed"
+        exit 1
+      fi
+    depends_on: [preflight]
+    context: fresh
+
+  - id: dry-run
+    bash: |
+      ansible-playbook --check --diff \
+        -i "$ANSIBLE_INVENTORY" \
+        "$ANSIBLE_PLAYBOOKS_DIR/$ARGUMENTS" \
+        2>&1 | tee "$ARTIFACTS_DIR/ansible-dry-run.txt"
+    depends_on: [syntax-check]
+    context: fresh
+
+  - id: diff-analyze
+    command: change-impact-classify
+    depends_on: [dry-run]
+    context: fresh
+
+  - id: approval
+    approval:
+      message: |
+        ## Ansible Playbook Execution Approval
+
+        **Environment:** $ENVIRONMENT
+        **Playbook:** $ARGUMENTS
+        **Inventory:** $ANSIBLE_INVENTORY
+
+        ### Dry-Run Diff
+        See $ARTIFACTS_DIR/ansible-dry-run.txt
+
+        **Review the changes above, then approve or reject.**
+      capture_response: true
+    depends_on: [diff-analyze]
+    when: "$ENVIRONMENT == 'production'"
+
+  - id: ansible-run
+    bash: |
+      START_TIME=$(date +%s)
+      ansible-playbook \
+        -i "$ANSIBLE_INVENTORY" \
+        "$ANSIBLE_PLAYBOOKS_DIR/$ARGUMENTS" \
+        $([ "$ANSIBLE_BECOME" = "true" ] && echo "--become") \
+        2>&1 | tee "$ARTIFACTS_DIR/ansible-run.log"
+      ANSIBLE_EXIT=$?
+      END_TIME=$(date +%s)
+      DURATION=$((END_TIME - START_TIME))
+      OUTCOME=$([ $ANSIBLE_EXIT -eq 0 ] && echo "success" || echo "failed")
+      DEPLOYMENT_ID="ansible-$(date +%Y%m%d%H%M%S)"
+      cat > "$ARTIFACTS_DIR/deploys/$DEPLOYMENT_ID.json" << EOF
+      {"deployment_id":"$DEPLOYMENT_ID","tool":"ansible","outcome":"$OUTCOME","duration_seconds":$DURATION,"environment":"$ENVIRONMENT","timestamp":"$(date -u +%Y-%m-%dT%H:%M:%SZ)"}
+      EOF
+    depends_on: [approval, diff-analyze]
+    context: fresh
+    trigger_rule: none_failed_min_one_success
+
+  - id: verify-idempotency
+    bash: |
+      ansible-playbook --check \
+        -i "$ANSIBLE_INVENTORY" \
+        "$ANSIBLE_PLAYBOOKS_DIR/$ARGUMENTS" \
+        2>&1 | tee "$ARTIFACTS_DIR/ansible-idempotency.log"
+      CHANGES=$(grep -c "changed=" "$ARTIFACTS_DIR/ansible-idempotency.log" | head -1)
+      echo "{\"idempotent\": $([ $CHANGES -eq 0 ] && echo 'true' || echo 'false')}" > "$ARTIFACTS_DIR/ansible-verify.json"
+    depends_on: [ansible-run]
+    context: fresh
+
+  - id: notify
+    command: notify-deploy-complete
+    depends_on: [verify-idempotency]
+    context: fresh

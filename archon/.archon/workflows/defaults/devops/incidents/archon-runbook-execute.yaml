@@ -1,0 +1,41 @@
+# archon-runbook-execute
+# Execute a specific runbook with explicit confirmation, resolution verification,
+# and a written outcome summary.
+
+name: runbook-execute
+description: |
+  Execute a specific runbook with explicit confirmation, resolution verification, and a
+  written outcome summary. Use when the operator already knows which runbook to follow
+  and wants a tracked, resumable execution path. This workflow confirms the runbook,
+  executes it, and writes the operational outcome for incident records.
+  NOT for: general alert investigation or release operations.
+version: 1.0.0
+
+environment: $ENVIRONMENT
+
+nodes:
+  - id: preflight
+    command: devops-preflight
+    context: fresh
+
+  - id: confirm-runbook-selection
+    approval:
+      message: |
+        ## Runbook Execution Confirmation
+
+        **Runbook:** $ARGUMENTS
+        **Environment:** $ENVIRONMENT
+
+        Approve to execute this runbook with tracked state and recorded artifacts.
+      capture_response: true
+    depends_on: [preflight]
+
+  - id: execute-runbook
+    command: runbook-executor
+    depends_on: [confirm-runbook-selection]
+    context: fresh
+
+  - id: verify-resolution
+    command: incident-resolve
+    depends_on: [execute-runbook]
+    context: fresh

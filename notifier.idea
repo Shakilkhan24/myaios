@@ -1,0 +1,15 @@
+AI OS notifier:
+    If any major incident happen in the os, then let me know 
+        errors
+        issues
+        major decisions making needed 
+        anything missing 
+        etc 
+
+    medium:
+        telegram
+        gmail
+    through:
+        mcps
+        apis 
+        browsing      

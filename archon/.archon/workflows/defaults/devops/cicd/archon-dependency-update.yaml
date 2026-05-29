@@ -1,0 +1,59 @@
+# archon-dependency-update
+# Audit package dependencies, prioritize outdated or vulnerable updates,
+# and prepare a batched update plan for pull requests.
+
+name: dependency-update
+description: |
+  Audit package dependencies, prioritize outdated or vulnerable updates, and prepare
+  a batched update plan for pull requests. Use when running recurring dependency
+  hygiene or preparing update batches before a release. This workflow scans the
+  dependency surface, ranks updates by urgency, and prepares a PR-ready plan.
+  NOT for: release tagging, pipeline validation, or direct production promotion.
+version: 1.0.0
+
+environment: $ENVIRONMENT
+
+nodes:
+  - id: preflight
+    command: devops-preflight
+    context: fresh
+
+  - id: scan-dependencies
+    command: dep-audit-npm
+    depends_on: [preflight]
+    context: fresh
+
+  - id: generate-sbom
+    command: sbom-generate
+    depends_on: [preflight]
+    context: fresh
+
+  - id: plan-update-batches
+    prompt: |
+      Review:
+      - $ARTIFACTS_DIR/dep-audit-npm.json
+      - $ARTIFACTS_DIR/sbom.json
+
+      Produce a prioritized dependency update plan and draft pull request batches.
+
+      Write:
+      - $ARTIFACTS_DIR/dependency-update-plan.md
+      - $ARTIFACTS_DIR/dependency-update-batches.md
+
+      In $ARTIFACTS_DIR/dependency-update-plan.md, group updates into:
+      - urgent security updates
+      - safe patch/minor batches
+      - major version upgrades requiring manual review
+
+      In $ARTIFACTS_DIR/dependency-update-batches.md, include:
+      - proposed branch names
+      - package groups per PR
+      - validation checks each PR should run
+      - which plan section each batch addresses
+    depends_on: [scan-dependencies, generate-sbom]
+    context: fresh
+
+  - id: notify
+    command: notify-security-findings
+    depends_on: [plan-update-batches]
+    context: fresh

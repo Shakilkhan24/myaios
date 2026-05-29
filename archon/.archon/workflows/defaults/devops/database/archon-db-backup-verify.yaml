@@ -1,0 +1,34 @@
+# archon-db-backup-verify
+# Create a backup and verify that it can be restored or at least has a documented
+# restore validation plan.
+
+name: db-backup-verify
+description: |
+  Create a backup and verify that it can be restored or at least has a documented restore
+  validation plan. Use when establishing a migration safety net or running routine backup
+  confidence checks. This workflow produces backup metadata and restore verification artifacts
+  that can be reviewed before risky database changes.
+  NOT for: schema migration execution.
+version: 1.0.0
+
+environment: $ENVIRONMENT
+
+nodes:
+  - id: preflight
+    command: devops-preflight
+    context: fresh
+
+  - id: backup-database
+    command: db-backup
+    depends_on: [preflight]
+    context: fresh
+
+  - id: verify-restore
+    command: db-restore-verify
+    depends_on: [backup-database]
+    context: fresh
+
+  - id: notify
+    command: notify-deploy-complete
+    depends_on: [verify-restore]
+    context: fresh

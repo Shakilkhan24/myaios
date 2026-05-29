@@ -1,0 +1,17 @@
+{
+  "newFileLocation": "folder",
+  "newFileFolderPath": "wiki",
+  "attachmentFolderPath": "raw/assets",
+  "alwaysUpdateLinks": true,
+  "useMarkdownLinks": false,
+  "newLinkFormat": "relative",
+  "showUnsupportedFiles": false,
+  "showFrontmatter": true,
+  "strictLineBreaks": false,
+  "foldHeading": true,
+  "foldIndent": true,
+  "showLineNumber": true,
+  "readableLineLength": true,
+  "defaultViewMode": "source",
+  "livePreview": true
+}

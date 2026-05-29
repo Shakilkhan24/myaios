@@ -1,0 +1,73 @@
+# archon-pipeline-validate
+# Validate repository pipeline definitions, route to the right linter,
+# and synthesize a best-practices review summary.
+
+name: pipeline-validate
+description: |
+  Validate repository pipeline definitions, route to the correct CI/CD linter,
+  and synthesize a best-practices review summary. Use when reviewing GitHub Actions,
+  GitLab CI, or Jenkins pipeline changes before merge. This workflow detects the
+  pipeline type, runs the relevant validation command, and prepares a consolidated
+  report for reviewers.
+  NOT for: shipping releases or promoting artifacts across environments.
+version: 1.0.0
+
+environment: $ENVIRONMENT
+
+nodes:
+  - id: preflight
+    command: devops-preflight
+    context: fresh
+
+  - id: detect-pipeline-type
+    bash: |
+      if [ -d ".github/workflows" ]; then
+        echo "github-actions"
+      elif [ -f ".gitlab-ci.yml" ]; then
+        echo "gitlab-ci"
+      elif [ -f "Jenkinsfile" ]; then
+        echo "jenkins"
+      else
+        echo "none"
+      fi
+    depends_on: [preflight]
+    context: fresh
+
+  - id: lint-github-actions
+    command: github-actions-lint
+    depends_on: [detect-pipeline-type]
+    context: fresh
+    when: "$detect-pipeline-type.output == 'github-actions'"
+
+  - id: lint-gitlab-ci
+    command: gitlab-ci-lint
+    depends_on: [detect-pipeline-type]
+    context: fresh
+    when: "$detect-pipeline-type.output == 'gitlab-ci'"
+
+  - id: lint-jenkins
+    command: jenkins-lint
+    depends_on: [detect-pipeline-type]
+    context: fresh
+    when: "$detect-pipeline-type.output == 'jenkins'"
+
+  - id: generate-report
+    prompt: |
+      Review the available pipeline validation artifact from this run and prepare a
+      reviewer-facing report.
+
+      Write the final report to $ARTIFACTS_DIR/pipeline-validation-report.md with:
+      - detected pipeline type
+      - validation outcome
+      - syntax or structure issues
+      - insecure patterns
+      - maintainability concerns
+      - the recommended next action for the pipeline author
+    depends_on: [lint-github-actions, lint-gitlab-ci, lint-jenkins]
+    context: fresh
+    trigger_rule: none_failed_min_one_success
+
+  - id: notify
+    command: notify-security-findings
+    depends_on: [generate-report]
+    context: fresh
